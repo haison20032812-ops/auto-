@@ -121,7 +121,7 @@ function App() {
   const [rssScenarioResults, setRssScenarioResults] = useState(null);
   const [isRunningRssScenario, setIsRunningRssScenario] = useState(false);
   const [rssError, setRssError] = useState(null);
-  const [rssUrlInput, setRssUrlInput] = useState("https://vnexpress.net/rss/kinh-doanh.rss");
+  const [rssUrlInput, setRssUrlInput] = useState("");
   const [rssTargetWebsite, setRssTargetWebsite] = useState("");
 
   const [user, setUser] = useState(() => {

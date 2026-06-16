@@ -2309,17 +2309,26 @@ app.post("/api/publish-single", async (req, res) => {
 
 // Route: Run the 4-step RSS automation scenario
 app.post("/api/run-rss-scenario", async (req, res) => {
-  const { rssUrl = "https://vnexpress.net/rss/kinh-doanh.rss", websiteId } = req.body;
-  const geminiKey = req.body.geminiKey || config.geminiKey;
-  const alibabaKey = req.body.alibabaKey || config.alibabaKey;
-  const openaiKey = req.body.openaiKey || config.openaiKey;
-
+  const { rssUrl, websiteId } = req.body;
+  
   const steps = {
     step1: { name: "Lấy tin tức/RSS", success: false, data: null, error: null },
     step2: { name: "Lọc sạch HTML (Text Parser)", success: false, data: null, error: null },
     step3: { name: "AI viết lại & chèn backlink", success: false, data: null, error: null },
     step4: { name: "Đăng lên WordPress ở chế độ Draft", success: false, data: null, error: null }
   };
+
+  if (!rssUrl || rssUrl.trim() === "") {
+    return res.status(400).json({
+      success: false,
+      error: "Đường dẫn bài viết hoặc nguồn RSS không được để trống!",
+      steps
+    });
+  }
+
+  const geminiKey = req.body.geminiKey || config.geminiKey;
+  const alibabaKey = req.body.alibabaKey || config.alibabaKey;
+  const openaiKey = req.body.openaiKey || config.openaiKey;
 
   try {
     // --- STEP 1: Fetch RSS Feed or HTML Article ---
