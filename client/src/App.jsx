@@ -67,11 +67,11 @@ function App() {
     { url: "https://maxdent.vn", anchorText: "Nha khoa MaxDent", linkType: "brand" }
   ]);
   const [hasLogos, setHasLogos] = useState(true);
-  const [logoPosition, setLogoPosition] = useState("bottom-right");
+  const [logoPosition, setLogoPosition] = useState("top-left");
   const [logoScale, setLogoScale] = useState(15);
   const [logo1Position, setLogo1Position] = useState("top-left");
   const [logo1Scale, setLogo1Scale] = useState(12);
-  const [logo2Position, setLogo2Position] = useState("bottom-right");
+  const [logo2Position, setLogo2Position] = useState("top-right");
   const [logo2Scale, setLogo2Scale] = useState(15);
   const [imageSize, setImageSize] = useState("1200x800");
   const [numImages, setNumImages] = useState("auto");
@@ -400,7 +400,7 @@ function App() {
       if (config.logoScale !== undefined) setLogoScale(config.logoScale);
       setLogo1Position(config.logo1Position || config.logoPosition || "top-left");
       setLogo1Scale(config.logo1Scale !== undefined ? config.logo1Scale : (config.logoScale !== undefined ? config.logoScale : 12));
-      setLogo2Position(config.logo2Position || config.logoPosition || "bottom-right");
+      setLogo2Position(config.logo2Position || config.logoPosition || "top-right");
       setLogo2Scale(config.logo2Scale !== undefined ? config.logo2Scale : (config.logoScale !== undefined ? config.logoScale : 15));
       if (config.imageSize) setImageSize(config.imageSize);
       if (config.hasLogos !== undefined) setHasLogos(config.hasLogos);
@@ -537,30 +537,7 @@ function App() {
     setTestNewResult(null);
   };
 
-  const sampleProducts = [
-    { name: "electric_toothbrush.png", label: "Bàn chải điện" },
-    { name: "implant_model.png", label: "Trụ Implant" },
-    { name: "whitening_toothpaste.png", label: "Kem đánh răng" },
-    { name: "mouthwash_bottle.png", label: "Nước súc miệng" }
-  ];
 
-  const handleSelectSampleImage = async (filename, label) => {
-    try {
-      const url = `/samples/${filename}`;
-      const response = await fetch(url);
-      const blob = await response.blob();
-      
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setProductImage(reader.result);
-        setImagePreview(url);
-      };
-      reader.readAsDataURL(blob);
-    } catch (err) {
-      console.error("Failed to load sample image:", err);
-      alert("❌ Lỗi khi tải ảnh sản phẩm mẫu: " + err.message);
-    }
-  };
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
@@ -587,24 +564,7 @@ function App() {
     setImagePreview("");
   };
 
-  // SEO Editor Handlers
-  const handleSelectSeoSampleImage = async (filename, label) => {
-    try {
-      const url = `/samples/${filename}`;
-      const response = await fetch(url);
-      const blob = await response.blob();
-      
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setSeoProductImage(reader.result);
-        setSeoProductPreview(url);
-      };
-      reader.readAsDataURL(blob);
-    } catch (err) {
-      console.error("Failed to load sample image:", err);
-      alert("❌ Lỗi khi tải ảnh sản phẩm mẫu: " + err.message);
-    }
-  };
+
 
   const handleSeoProductImageChange = (e) => {
     const file = e.target.files[0];
@@ -1524,7 +1484,7 @@ function App() {
                       </div>
                       <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem", flex: 1 }}>
                         <span style={{ fontSize: "0.85rem", fontWeight: "600", color: "var(--color-text)" }}>
-                          {imagePreview.startsWith("/samples/") ? "Đã chọn ảnh mẫu thành công" : "Đã tải ảnh lên thành công"}
+                          Đã tải ảnh lên thành công
                         </span>
                         <span style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)" }}>Sản phẩm này sẽ được GPT-4o Vision phân tích và lồng ghép vẽ bối cảnh bằng DALL-E 3.</span>
                         <button type="button" className="btn-action-small delete" onClick={handleRemoveImage} style={{ width: "fit-content", marginTop: "0.25rem" }}>
@@ -1533,46 +1493,6 @@ function App() {
                       </div>
                     </div>
                   )}
-
-                  {/* Sample Product Selection */}
-                  <div style={{ marginTop: "1rem" }}>
-                    <span style={{ fontSize: "0.85rem", fontWeight: "600", color: "var(--color-text-secondary)", display: "block", marginBottom: "0.5rem" }}>
-                      Hoặc chọn nhanh từ hình sản phẩm mẫu có sẵn:
-                    </span>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.75rem" }}>
-                      {sampleProducts.map((sample) => {
-                        const sampleUrl = `/samples/${sample.name}`;
-                        const isSelected = imagePreview === sampleUrl;
-                        return (
-                          <div 
-                            key={sample.name} 
-                            onClick={() => handleSelectSampleImage(sample.name, sample.label)}
-                            style={{
-                              border: isSelected ? "2px solid var(--color-primary)" : "1px solid var(--color-border)",
-                              borderRadius: "6px",
-                              padding: "0.35rem",
-                              cursor: "pointer",
-                              backgroundColor: "#ffffff",
-                              textAlign: "center",
-                              transition: "all 0.2s ease",
-                              transform: isSelected ? "scale(1.02)" : "none",
-                              boxShadow: isSelected ? "0 4px 12px rgba(79, 70, 229, 0.15)" : "none"
-                            }}
-                            className="sample-img-card"
-                          >
-                            <img 
-                              src={sampleUrl} 
-                              alt={sample.label} 
-                              style={{ width: "100%", height: "50px", objectFit: "cover", borderRadius: "4px", marginBottom: "0.25rem" }} 
-                            />
-                            <div style={{ fontSize: "0.7rem", fontWeight: "600", color: isSelected ? "var(--color-primary)" : "var(--color-text)" }}>
-                              {sample.label}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
                 </div>
 
                 <div className="grid-2">
@@ -1814,33 +1734,7 @@ function App() {
                         </div>
                       )}
 
-                      {/* Sample Products Grid */}
-                      <div style={{ marginTop: "0.75rem" }}>
-                        <span style={{ fontSize: "0.75rem", color: "var(--color-text-secondary)", display: "block", marginBottom: "0.25rem" }}>Hoặc chọn nhanh từ kho mẫu:</span>
-                        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.5rem" }}>
-                          {sampleProducts.map((sample) => {
-                            const sampleUrl = `/samples/${sample.name}`;
-                            const isSelected = seoProductPreview === sampleUrl;
-                            return (
-                              <div 
-                                key={sample.name}
-                                onClick={() => handleSelectSeoSampleImage(sample.name, sample.label)}
-                                style={{
-                                  border: isSelected ? "2px solid var(--color-primary)" : "1px solid var(--color-border)",
-                                  borderRadius: "4px",
-                                  padding: "0.25rem",
-                                  cursor: "pointer",
-                                  backgroundColor: "#ffffff",
-                                  textAlign: "center"
-                                }}
-                              >
-                                <img src={sampleUrl} alt={sample.label} style={{ width: "100%", height: "30px", objectFit: "cover", borderRadius: "2px" }} />
-                                <div style={{ fontSize: "0.6rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sample.label}</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
+
                       
                       {/* Checkbox: Include Images in Single Editor */}
                       <div style={{ marginTop: "1rem", padding: "0.75rem", backgroundColor: "#fff7ed", borderRadius: "6px", border: "1px solid #ffedd5", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -1929,9 +1823,6 @@ function App() {
                                 <select value={logo1Position} onChange={(e) => setLogo1Position(e.target.value)} style={{ padding: "0.25rem", fontSize: "0.8rem" }}>
                                   <option value="top-left">Trên trái</option>
                                   <option value="top-right">Trên phải</option>
-                                  <option value="bottom-left">Dưới trái</option>
-                                  <option value="bottom-right">Dưới phải</option>
-                                  <option value="center-footer">Giữa Footer</option>
                                 </select>
                               </div>
                               <div className="form-group" style={{ marginBottom: 0 }}>
@@ -1943,7 +1834,7 @@ function App() {
                                   value={logo1Scale}
                                   onChange={(e) => setLogo1Scale(parseInt(e.target.value))}
                                   style={{ width: "100%", height: "6px", cursor: "pointer" }}
-                                />
+                                  />
                               </div>
                             </div>
                           </div>
@@ -1957,9 +1848,6 @@ function App() {
                                 <select value={logo2Position} onChange={(e) => setLogo2Position(e.target.value)} style={{ padding: "0.25rem", fontSize: "0.8rem" }}>
                                   <option value="top-left">Trên trái</option>
                                   <option value="top-right">Trên phải</option>
-                                  <option value="bottom-left">Dưới trái</option>
-                                  <option value="bottom-right">Dưới phải</option>
-                                  <option value="center-footer">Giữa Footer</option>
                                 </select>
                               </div>
                               <div className="form-group" style={{ marginBottom: 0 }}>
@@ -2463,9 +2351,6 @@ function App() {
                             >
                               <option value="top-left">Trên bên trái</option>
                               <option value="top-right">Trên bên phải</option>
-                              <option value="bottom-left">Dưới bên trái</option>
-                              <option value="bottom-right">Dưới bên phải</option>
-                              <option value="center-footer">Giữa Footer</option>
                             </select>
                           </div>
                           <div className="form-group">
@@ -2509,15 +2394,12 @@ function App() {
                           <div className="form-group" style={{ marginBottom: "0.75rem" }}>
                             <label style={{ fontSize: "0.8rem", fontWeight: "600" }}>Vị trí dán Logo 2</label>
                             <select 
-                              value={config.logo2Position || "bottom-right"} 
+                              value={config.logo2Position || "top-right"} 
                               onChange={(e) => setConfig(prev => ({ ...prev, logo2Position: e.target.value }))}
                               style={{ width: "100%", padding: "0.4rem", fontSize: "0.8rem", marginTop: "0.25rem", borderRadius: "4px", border: "1px solid var(--color-border)" }}
                             >
                               <option value="top-left">Trên bên trái</option>
                               <option value="top-right">Trên bên phải</option>
-                              <option value="bottom-left">Dưới bên trái</option>
-                              <option value="bottom-right">Dưới bên phải</option>
-                              <option value="center-footer">Giữa Footer</option>
                             </select>
                           </div>
                           <div className="form-group">

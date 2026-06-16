@@ -220,11 +220,11 @@ export async function generateAndCompositeImage({
   logo2,        // Base64
   width = 1200,
   height = 800,
-  logoPosition = "bottom-right",
+  logoPosition = "top-left",
   logoScale = 15,
   logo1Position = "top-left",
   logo1Scale = 12,
-  logo2Position = "bottom-right",
+  logo2Position = "top-right",
   logo2Scale = 15,
   hasLogos = true,
   filename = "dental-illustration.webp",
@@ -452,7 +452,7 @@ export async function generateAndCompositeImage({
 
     const pos1 = logo1Position || logoPosition || "top-left";
     const scale1 = logo1Scale !== undefined ? logo1Scale : logoScale || 12;
-    const pos2 = logo2Position || logoPosition || "bottom-right";
+    const pos2 = logo2Position || logoPosition || "top-right";
     const scale2 = logo2Scale !== undefined ? logo2Scale : logoScale || 15;
 
     let logo1WidthActual = 0;
@@ -460,7 +460,7 @@ export async function generateAndCompositeImage({
     // Logo 1
     if (logo1Buf) {
       console.log(`Compositing logo 1 onto canvas at position: ${pos1}...`);
-      const targetLogoWidth = Math.round(width * (scale1 / 100));
+      const targetLogoWidth = Math.round(width * ((scale1 * 2) / 100));
       const resizedLogo = await sharp(logo1Buf).resize({ width: targetLogoWidth }).toBuffer();
       const metadata = await sharp(resizedLogo).metadata();
       const logoW = metadata.width;
@@ -480,7 +480,7 @@ export async function generateAndCompositeImage({
     // Logo 2
     if (logo2Buf) {
       console.log(`Compositing logo 2 onto canvas at position: ${pos2}...`);
-      const targetLogoWidth = Math.round(width * (scale2 / 100));
+      const targetLogoWidth = Math.round(width * ((scale2 * 2) / 100));
       const resizedLogo = await sharp(logo2Buf).resize({ width: targetLogoWidth }).toBuffer();
       const metadata = await sharp(resizedLogo).metadata();
       const logoW = metadata.width;

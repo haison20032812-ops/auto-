@@ -39,11 +39,11 @@ let config = {
   customSystemPrompt: "",
   logo1: "",
   logo2: "",
-  logoPosition: "bottom-right",
+  logoPosition: "top-left",
   logoScale: 15,
   logo1Position: "top-left",
   logo1Scale: 12,
-  logo2Position: "bottom-right",
+  logo2Position: "top-right",
   logo2Scale: 15,
   imageSize: "1200x800",
   hasLogos: true,
@@ -74,11 +74,11 @@ const configSchema = new mongoose.Schema({
   customSystemPrompt: { type: String, default: "" },
   logo1: { type: String, default: "" },
   logo2: { type: String, default: "" },
-  logoPosition: { type: String, default: "bottom-right" },
+  logoPosition: { type: String, default: "top-left" },
   logoScale: { type: Number, default: 15 },
   logo1Position: { type: String, default: "top-left" },
   logo1Scale: { type: Number, default: 12 },
-  logo2Position: { type: String, default: "bottom-right" },
+  logo2Position: { type: String, default: "top-right" },
   logo2Scale: { type: Number, default: 15 },
   imageSize: { type: String, default: "1200x800" },
   hasLogos: { type: Boolean, default: true },
@@ -1141,11 +1141,11 @@ Hãy chọn các từ khóa tìm kiếm ảnh phù hợp như 'dentist', 'dental
           const globalBacklinks = params.backlinks || config.backlinks || [];
           const globalLogo1 = params.logo1 || config.logo1 || "";
           const globalLogo2 = params.logo2 || config.logo2 || "";
-          const globalLogoPosition = params.logoPosition || config.logoPosition || "bottom-right";
+          const globalLogoPosition = params.logoPosition || config.logoPosition || "top-left";
           const globalLogoScale = params.logoScale || config.logoScale || 15;
           const globalLogo1Position = params.logo1Position || config.logo1Position || config.logoPosition || "top-left";
           const globalLogo1Scale = params.logo1Scale !== undefined ? params.logo1Scale : (config.logo1Scale !== undefined ? config.logo1Scale : (config.logoScale !== undefined ? config.logoScale : 12));
-          const globalLogo2Position = params.logo2Position || config.logo2Position || config.logoPosition || "bottom-right";
+          const globalLogo2Position = params.logo2Position || config.logo2Position || config.logoPosition || "top-right";
           const globalLogo2Scale = params.logo2Scale !== undefined ? params.logo2Scale : (config.logo2Scale !== undefined ? config.logo2Scale : (config.logoScale !== undefined ? config.logoScale : 15));
           const globalImageSize = params.imageSize || config.imageSize || "1200x800";
           const globalHasLogos = params.hasLogos !== undefined ? params.hasLogos : (config.hasLogos !== undefined ? config.hasLogos : true);
@@ -1503,11 +1503,11 @@ Sử dụng các URL ảnh nha khoa chất lượng cao từ Unsplash làm thu�
                 const globalBacklinks = params.backlinks || config.backlinks || [];
                 const globalLogo1 = params.logo1 || config.logo1 || "";
                 const globalLogo2 = params.logo2 || config.logo2 || "";
-                const globalLogoPosition = params.logoPosition || config.logoPosition || "bottom-right";
+                const globalLogoPosition = params.logoPosition || config.logoPosition || "top-left";
                 const globalLogoScale = params.logoScale || config.logoScale || 15;
                 const globalLogo1Position = params.logo1Position || config.logo1Position || config.logoPosition || "top-left";
                 const globalLogo1Scale = params.logo1Scale !== undefined ? params.logo1Scale : (config.logo1Scale !== undefined ? config.logo1Scale : (config.logoScale !== undefined ? config.logoScale : 12));
-                const globalLogo2Position = params.logo2Position || config.logo2Position || config.logoPosition || "bottom-right";
+                const globalLogo2Position = params.logo2Position || config.logo2Position || config.logoPosition || "top-right";
                 const globalLogo2Scale = params.logo2Scale !== undefined ? params.logo2Scale : (config.logo2Scale !== undefined ? config.logo2Scale : (config.logoScale !== undefined ? config.logoScale : 15));
                 const globalImageSize = params.imageSize || config.imageSize || "1200x800";
                 const globalHasLogos = params.hasLogos !== undefined ? params.hasLogos : (config.hasLogos !== undefined ? config.hasLogos : true);
@@ -2009,7 +2009,7 @@ app.post("/api/optimize-post", async (req, res) => {
       logo1,
       logo2,
       backlinks = [],
-      logoPosition = "bottom-right",
+      logoPosition = "top-left",
       logoScale = 15,
       logo1Position,
       logo1Scale,
@@ -2029,7 +2029,7 @@ app.post("/api/optimize-post", async (req, res) => {
 
     const finalLogo1Pos = logo1Position || config.logo1Position || logoPosition || "top-left";
     const finalLogo1Scale = logo1Scale !== undefined ? logo1Scale : (config.logo1Scale !== undefined ? config.logo1Scale : logoScale);
-    const finalLogo2Pos = logo2Position || config.logo2Position || logoPosition || "bottom-right";
+    const finalLogo2Pos = logo2Position || config.logo2Position || logoPosition || "top-right";
     const finalLogo2Scale = logo2Scale !== undefined ? logo2Scale : (config.logo2Scale !== undefined ? config.logo2Scale : logoScale);
 
     let width = 1200;
