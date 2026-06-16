@@ -2756,7 +2756,7 @@ function App() {
                   <div className="stat-icon blue">🔗</div>
                   <div className="stat-details">
                     <span className="stat-label">Bước 1: Nguồn RSS</span>
-                    <span className="stat-value" style={{ fontSize: "1.1rem" }}>VnExpress RSS</span>
+                    <span className="stat-value" style={{ fontSize: "1.1rem" }}>Liên kết / RSS</span>
                   </div>
                 </div>
                 <div className="stat-card" style={{ borderLeft: "4px solid #10b981" }}>
@@ -2791,7 +2791,7 @@ function App() {
                       type="text"
                       value={rssUrlInput}
                       onChange={(e) => setRssUrlInput(e.target.value)}
-                      placeholder="Dán link bài viết (VnExpress, Nha khoa...) hoặc nguồn RSS..."
+                      placeholder="Dán link bài viết hoặc nguồn RSS của bạn..."
                     />
                   </div>
                   <div className="form-group">
