@@ -1838,6 +1838,7 @@ function App() {
                                 <div style={{ fontSize: "0.6rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sample.label}</div>
                               </div>
                             );
+                          })}
                         </div>
                       </div>
                       
