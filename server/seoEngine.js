@@ -46,14 +46,15 @@ export async function optimizeArticleWithAI({
   numImages = "auto",
   openaiKey,
   alibabaKey,
-  model = "qwen"
+  model = "qwen",
+  includeImages = true
 }) {
   // 1. Calculate length and recommendations
   const cleanText = (content || "").replace(/<[^>]*>/g, " ").trim();
   const wordCount = cleanText.split(/\s+/).filter(w => w.length > 0).length;
   const recs = calculateSEORecommendations(wordCount);
 
-  const targetImagesCount = numImages === "auto" ? recs.images : parseInt(numImages) || 2;
+  const targetImagesCount = includeImages ? (numImages === "auto" ? recs.images : parseInt(numImages) || 2) : 0;
   const targetLinksCount = Math.min(recs.links, backlinks.length);
 
   console.log(`Optimizing article: "${title}". Words: ${wordCount}. Targets: ${targetImagesCount} images, ${targetLinksCount} backlinks.`);
@@ -65,14 +66,16 @@ export async function optimizeArticleWithAI({
   }
 
   // 2. Build AI Prompt
-  const prompt = `Bạn là một chuyên gia SEO Nha khoa hàng đầu. 
-Hãy tối ưu bài viết dưới đây bằng cách:
-1. Chèn tự nhiên đúng ${targetLinksCount} Backlinks vào bài viết ở các câu văn phù hợp ngữ cảnh nhất.
-2. Xác định các vị trí tốt nhất để đặt ${targetImagesCount} hình ảnh minh họa bài viết. Hãy chèn các thẻ placeholder hình ảnh có cấu trúc dạng: <img class="seo-ill" data-idx="0" src="" alt="Alt text của ảnh" />.
+  let promptInstructions = "";
+  if (targetImagesCount > 0) {
+    promptInstructions = `2. Xác định các vị trí tốt nhất để đặt ${targetImagesCount} hình ảnh minh họa bài viết. Hãy chèn các thẻ placeholder hình ảnh có cấu trúc dạng: <img class="seo-ill" data-idx="0" src="" alt="Alt text của ảnh" />.`;
+  } else {
+    promptInstructions = `2. KHÔNG ĐƯỢC chèn bất kỳ thẻ hình ảnh <img> hay bất kỳ placeholder hình ảnh nào vào bài viết. Hãy giữ nội dung bài viết chỉ có văn bản và các backlinks.`;
+  }
 
-Danh sách backlinks cần chèn (chọn tối đa ${targetLinksCount} link khác nhau để chèn, mỗi link chèn đúng 1 lần, KHÔNG chèn trùng lặp anchor text):
-${JSON.stringify(backlinks.slice(0, targetLinksCount), null, 2)}
-
+  let imageInstructions = "";
+  if (targetImagesCount > 0) {
+    imageInstructions = `
 Nguyên tắc chèn ảnh và sinh DALL-E prompt:
 - Thẻ đầu tiên (data-idx="0") là ảnh đại diện (Hero/Thumbnail), đặt ngay dưới tiêu đề H1 hoặc sau đoạn mở đầu.
 - Các thẻ tiếp theo (data-idx từ 1 đến ${targetImagesCount - 1}) là ảnh giữa bài (minh họa kỹ thuật, lợi ích) hoặc ảnh Infographic (đặt ở bảng so sánh, quy trình).
@@ -86,7 +89,20 @@ Nguyên tắc chèn ảnh và sinh DALL-E prompt:
      - Nếu bài viết nhắc đến "màng collagen" (collagen membrane), đây là màng sinh học nha khoa dùng trong phẫu thuật tái tạo xương (GBR), nghiêm cấm tạo hình ảnh liên quan đến mặt nạ dưỡng da collagen, mỹ phẩm hay khuôn mặt người mẫu.
      - Nếu bài viết nói về "implant", "trụ implant", "ren implant" -> Nền phải là mô phỏng 3D xương hàm (3D jawbone structure simulation), implant trong xương hàm hoặc cận cảnh ren, osseointegration, hoặc không gian phòng khám nha khoa hiện đại (clean, sterile dental treatment room, modern dental chair, medical cabinets), mô hình răng sứ cao cấp. KHÔNG ĐƯỢC dùng hình ảnh bột xương/hạt vật liệu (bone graft powder) trừ khi bài viết chính xác nói về ghép xương bột xương.
      - Nếu bài viết nói về "bột xương", "ghép xương", "GBR", "màng collagen" -> Nền mới được phép hiển thị bột sinh học nha khoa, hạt xương nhân tạo, màng sinh học phòng phẫu thuật y khoa vô trùng, hoặc bối cảnh phòng nha điều trị sạch sẽ.
-  4. Tránh lặp lại: Đảm bảo prompt DALL-E của mỗi ảnh trong cùng một bài viết (và giữa các bài viết khác nhau) là hoàn toàn khác biệt về góc chụp, màu sắc, bối cảnh nền và góc độ để tránh trùng lặp hình ảnh.
+  4. Tránh lặp lại: Đảm bảo prompt DALL-E của mỗi ảnh trong cùng một bài viết (và giữa các bài viết khác nhau) là hoàn toàn khác biệt về góc chụp, màu sắc, bối cảnh nền và góc độ để tránh trùng lặp hình ảnh.`;
+  } else {
+    imageInstructions = `
+Vì số lượng ảnh yêu cầu là 0, mảng "images" trong kết quả JSON trả về phải là mảng RỖNG []. Không sinh bất kỳ prompt hay thông tin ảnh nào.`;
+  }
+
+  const prompt = `Bạn là một chuyên gia SEO Nha khoa hàng đầu. 
+Hãy tối ưu bài viết dưới đây bằng cách:
+1. Chèn tự nhiên đúng ${targetLinksCount} Backlinks vào bài viết ở các câu văn phù hợp ngữ cảnh nhất.
+${promptInstructions}
+
+Danh sách backlinks cần chèn (chọn tối đa ${targetLinksCount} link khác nhau để chèn, mỗi link chèn đúng 1 lần, KHÔNG chèn trùng lặp anchor text):
+${JSON.stringify(backlinks.slice(0, targetLinksCount), null, 2)}
+${imageInstructions}
 
 Nội dung bài viết gốc cần xử lý:
 ---
@@ -113,7 +129,6 @@ Hãy trả về kết quả ở định dạng JSON chuẩn. KHÔNG TRẢ VỀ c
       "context": "Câu văn chứa link trong bài..."
     }
   ],
-  "warnings": []
 }`;
 
   let aiResponse = "";

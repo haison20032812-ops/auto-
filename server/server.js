@@ -829,7 +829,8 @@ async function runBulkPublishWorkflow(taskId, params) {
     cooldown = 15, // seconds
     productImage,
     category,
-    useMultiSiteVariation = false
+    useMultiSiteVariation = false,
+    includeImages = true
   } = params;
 
   // Use keys from request or saved config
@@ -1159,7 +1160,8 @@ Hãy chọn các từ khóa tìm kiếm ảnh phù hợp như 'dentist', 'dental
             numImages: "auto",
             openaiKey,
             alibabaKey,
-            model: writingModel
+            model: writingModel,
+            includeImages
           });
 
           logStep(taskId, `${displayTopicNum} Tối ưu nội dung AI hoàn tất. Từ khóa & Link đã chèn.`, "success");
@@ -1519,7 +1521,8 @@ Sử dụng các URL ảnh nha khoa chất lượng cao từ Unsplash làm thu�
                   numImages: "auto",
                   openaiKey,
                   alibabaKey,
-                  model: writingModel
+                  model: writingModel,
+                  includeImages
                 });
 
                 siteArticle = seoResult.optimizedHtml;
@@ -2016,7 +2019,8 @@ app.post("/api/optimize-post", async (req, res) => {
       imageSize = "1200x800",
       numImages = "auto",
       model = "qwen",
-      imageModel = "unsplash"
+      imageModel = "unsplash",
+      includeImages = true
     } = params;
 
     const openaiKey = params.openaiKey || config.openaiKey;
@@ -2046,7 +2050,8 @@ app.post("/api/optimize-post", async (req, res) => {
       numImages,
       openaiKey,
       alibabaKey,
-      model
+      model,
+      includeImages
     });
 
     // 2. Generate and composite each image

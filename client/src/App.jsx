@@ -77,6 +77,7 @@ function App() {
   const [numImages, setNumImages] = useState("auto");
   const [seoModel, setSeoModel] = useState("qwen");
   const [seoImageModel, setSeoImageModel] = useState("unsplash");
+  const [seoIncludeImages, setSeoIncludeImages] = useState(true);
 
   const [isOptimizing, setIsOptimizing] = useState(false);
   const [isGeneratingArticle, setIsGeneratingArticle] = useState(false);
@@ -98,6 +99,7 @@ function App() {
     cooldown: 15,
     useAdvancedSeo: true,
     useMultiSiteVariation: true,
+    includeImages: true,
   });
 
   // Task running states
@@ -794,6 +796,7 @@ function App() {
         numImages,
         model: seoModel,
         imageModel: seoImageModel,
+        includeImages: seoIncludeImages,
         openaiKey: config.openaiKey,
         alibabaKey: config.alibabaKey,
         leonardoKey: config.leonardoKey
@@ -1683,6 +1686,24 @@ function App() {
                       style={{ width: "20px", height: "20px", cursor: "pointer" }}
                     />
                   </div>
+
+                  <div style={{ padding: "1rem", backgroundColor: "#fff7ed", borderRadius: "8px", border: "1px solid #ffedd5", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
+                      <span style={{ fontWeight: "700", fontSize: "0.9rem", color: "#c2410c" }}>
+                        🖼️ Đăng kèm hình ảnh minh họa cho bài viết
+                      </span>
+                      <span style={{ fontSize: "0.75rem", color: "#9a3412" }}>
+                        Khi bật, hệ thống sẽ tự động thiết kế hình ảnh chèn vào bài. Khi tắt, bài viết sẽ chỉ đăng văn bản thuần túy.
+                      </span>
+                    </div>
+                    <input 
+                      type="checkbox" 
+                      name="includeImages"
+                      checked={params.includeImages !== undefined ? params.includeImages : true}
+                      onChange={(e) => setParams(prev => ({ ...prev, includeImages: e.target.checked }))}
+                      style={{ width: "20px", height: "20px", cursor: "pointer" }}
+                    />
+                  </div>
                 </div>
 
                 {/* Confirm target websites selected */}
@@ -1817,8 +1838,25 @@ function App() {
                                 <div style={{ fontSize: "0.6rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sample.label}</div>
                               </div>
                             );
-                          })}
                         </div>
+                      </div>
+                      
+                      {/* Checkbox: Include Images in Single Editor */}
+                      <div style={{ marginTop: "1rem", padding: "0.75rem", backgroundColor: "#fff7ed", borderRadius: "6px", border: "1px solid #ffedd5", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
+                          <span style={{ fontWeight: "700", fontSize: "0.85rem", color: "#c2410c" }}>
+                            🖼️ Đăng kèm hình ảnh minh họa
+                          </span>
+                          <span style={{ fontSize: "0.7rem", color: "#9a3412" }}>
+                            Bật để AI tự động thiết kế hình ảnh chèn vào bài. Tắt để chỉ xuất bản bài viết dạng chữ.
+                          </span>
+                        </div>
+                        <input 
+                          type="checkbox" 
+                          checked={seoIncludeImages} 
+                          onChange={(e) => setSeoIncludeImages(e.target.checked)} 
+                          style={{ width: "18px", height: "18px", cursor: "pointer" }}
+                        />
                       </div>
                     </div>
 
