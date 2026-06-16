@@ -487,7 +487,10 @@ function App() {
 
   const saveConfigToServer = async (updatedConfig) => {
     try {
-      await axios.post(`${BACKEND_URL}/api/config`, updatedConfig);
+      const res = await axios.post(`${BACKEND_URL}/api/config`, updatedConfig);
+      if (res.data && res.data.config) {
+        setConfig(res.data.config);
+      }
     } catch (err) {
       console.error("Failed to auto-save config:", err);
     }
@@ -495,7 +498,10 @@ function App() {
 
   const handleSaveConfig = async () => {
     try {
-      await axios.post(`${BACKEND_URL}/api/config`, config);
+      const res = await axios.post(`${BACKEND_URL}/api/config`, config);
+      if (res.data && res.data.config) {
+        setConfig(res.data.config);
+      }
       alert("💾 Cấu hình đã được lưu thành công!");
     } catch (err) {
       alert("❌ Lỗi khi lưu cấu hình: " + err.message);

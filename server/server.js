@@ -610,17 +610,51 @@ app.post("/api/admin/smtp", authMiddleware, adminMiddleware, async (req, res) =>
 
 // Get config
 app.get("/api/config", (req, res) => {
-  res.json(config);
+  const userConfig = { ...config };
+  userConfig.websites = (config.websites || []).filter(w => {
+    if (w.addedBy === req.user.id) return true;
+    if (req.user.role === 'admin' && (w.addedBy === 'admin' || !w.addedBy)) return true;
+    return false;
+  });
+  res.json(userConfig);
 });
 
 // Update config
 app.post("/api/config", async (req, res) => {
   try {
-    config = { ...config, ...req.body };
+    let incomingConfig = { ...req.body };
+    
+    let dbConfig = null;
     if (mongoose.connection.readyState === 1) {
-      let dbConfig = await Config.findOne({});
+      dbConfig = await Config.findOne({});
+    }
+    const currentWebsites = dbConfig ? (dbConfig.websites || []) : (config.websites || []);
+
+    if (incomingConfig.websites && Array.isArray(incomingConfig.websites)) {
+      // 1. Tag incoming websites with current user's ID
+      const incomingWebsites = incomingConfig.websites.map(w => ({
+        ...w,
+        addedBy: w.addedBy || req.user.id
+      }));
+
+      // 2. Keep websites belonging to other users
+      const otherUsersWebsites = currentWebsites.filter(w => {
+        if (w.addedBy === req.user.id) return false;
+        if (req.user.role === 'admin' && (w.addedBy === 'admin' || !w.addedBy)) return false;
+        return true;
+      });
+
+      // 3. Merge websites
+      incomingConfig.websites = [...otherUsersWebsites, ...incomingWebsites];
+    } else {
+      incomingConfig.websites = currentWebsites;
+    }
+
+    config = { ...config, ...incomingConfig };
+    
+    if (mongoose.connection.readyState === 1) {
       if (dbConfig) {
-        Object.assign(dbConfig, req.body);
+        Object.assign(dbConfig, incomingConfig);
         await dbConfig.save();
       } else {
         dbConfig = new Config(config);
@@ -630,7 +664,16 @@ app.post("/api/config", async (req, res) => {
     } else {
       fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf8");
     }
-    res.json({ success: true, message: "Configuration saved successfully!" });
+
+    // Filter websites returned in response
+    const responseConfig = { ...config };
+    responseConfig.websites = (config.websites || []).filter(w => {
+      if (w.addedBy === req.user.id) return true;
+      if (req.user.role === 'admin' && (w.addedBy === 'admin' || !w.addedBy)) return true;
+      return false;
+    });
+
+    res.json({ success: true, message: "Configuration saved successfully!", config: responseConfig });
   } catch (err) {
     res.status(500).json({ error: "Failed to save configuration: " + err.message });
   }
