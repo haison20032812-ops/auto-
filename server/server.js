@@ -11,6 +11,10 @@ import { optimizeArticleWithAI, slugify } from "./seoEngine.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import nodemailer from "nodemailer";
+import dotenv from "dotenv";
+import mongoose from "mongoose";
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,44 +52,131 @@ let config = {
   smtpPassword: ""
 };
 
-// Load config from file if exists
-if (fs.existsSync(CONFIG_PATH)) {
+// MongoDB Schemas & Models
+const userSchema = new mongoose.Schema({
+  id: { type: String, unique: true },
+  username: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+  status: { type: String, default: "pending" },
+  activationCode: { type: String },
+  role: { type: String, default: "user" },
+  createdAt: { type: String }
+});
+const User = mongoose.model("User", userSchema);
+
+const configSchema = new mongoose.Schema({
+  geminiKey: { type: String, default: "" },
+  openaiKey: { type: String, default: "" },
+  alibabaKey: { type: String, default: "" },
+  leonardoKey: { type: String, default: "" },
+  websites: { type: Array, default: [] },
+  customSystemPrompt: { type: String, default: "" },
+  logo1: { type: String, default: "" },
+  logo2: { type: String, default: "" },
+  logoPosition: { type: String, default: "bottom-right" },
+  logoScale: { type: Number, default: 15 },
+  logo1Position: { type: String, default: "top-left" },
+  logo1Scale: { type: Number, default: 12 },
+  logo2Position: { type: String, default: "bottom-right" },
+  logo2Scale: { type: Number, default: 15 },
+  imageSize: { type: String, default: "1200x800" },
+  hasLogos: { type: Boolean, default: true },
+  backlinks: { type: Array, default: [] },
+  smtpEmail: { type: String, default: "" },
+  smtpPassword: { type: String, default: "" }
+}, { strict: false });
+const Config = mongoose.model("Config", configSchema);
+
+const historySchema = new mongoose.Schema({
+  taskId: { type: String, required: true },
+  title: { type: String, required: true },
+  link: { type: String, required: true },
+  imageUrl: { type: String },
+  topic: { type: String },
+  websiteName: { type: String },
+  websiteUrl: { type: String },
+  timestamp: { type: String }
+});
+const History = mongoose.model("History", historySchema);
+
+async function initializeConfig() {
   try {
-    const raw = fs.readFileSync(CONFIG_PATH, "utf8");
-    const parsed = JSON.parse(raw);
-    
-    // Migrate old config structure to websites array if needed
-    if (!parsed.websites) {
-      parsed.websites = [];
-    }
-    if (parsed.wpUrl && parsed.wpUrl.trim() !== "") {
-      const alreadyMigrated = parsed.websites.some(w => w.url === parsed.wpUrl);
-      if (!alreadyMigrated) {
-        parsed.websites.push({
-          id: "site_" + Date.now(),
-          name: "MaxDent",
-          url: parsed.wpUrl,
-          user: parsed.wpUser || "",
-          password: parsed.wpAppPassword || ""
-        });
+    if (mongoose.connection.readyState === 1) {
+      let dbConfig = await Config.findOne({});
+      if (!dbConfig) {
+        let initialConfig = { ...config };
+        if (fs.existsSync(CONFIG_PATH)) {
+          try {
+            const raw = fs.readFileSync(CONFIG_PATH, "utf8");
+            const parsed = JSON.parse(raw);
+            if (parsed.wpUrl && parsed.wpUrl.trim() !== "") {
+              if (!parsed.websites) parsed.websites = [];
+              const alreadyMigrated = parsed.websites.some(w => w.url === parsed.wpUrl);
+              if (!alreadyMigrated) {
+                parsed.websites.push({
+                  id: "site_" + Date.now(),
+                  name: "MaxDent",
+                  url: parsed.wpUrl,
+                  user: parsed.wpUser || "",
+                  password: parsed.wpAppPassword || ""
+                });
+              }
+              delete parsed.wpUrl;
+              delete parsed.wpUser;
+              delete parsed.wpAppPassword;
+            }
+            initialConfig = { ...initialConfig, ...parsed };
+          } catch (e) {
+            console.error("Failed to migrate config.json to MongoDB:", e);
+          }
+        }
+        dbConfig = new Config(initialConfig);
+        await dbConfig.save();
+        console.log("Config initialized in MongoDB Atlas!");
       }
-      delete parsed.wpUrl;
-      delete parsed.wpUser;
-      delete parsed.wpAppPassword;
+      config = dbConfig.toObject();
+      console.log("Config loaded from MongoDB Atlas.");
+    } else {
+      if (fs.existsSync(CONFIG_PATH)) {
+        try {
+          const raw = fs.readFileSync(CONFIG_PATH, "utf8");
+          const parsed = JSON.parse(raw);
+          if (!parsed.websites) parsed.websites = [];
+          if (parsed.wpUrl && parsed.wpUrl.trim() !== "") {
+            const alreadyMigrated = parsed.websites.some(w => w.url === parsed.wpUrl);
+            if (!alreadyMigrated) {
+              parsed.websites.push({
+                id: "site_" + Date.now(),
+                name: "MaxDent",
+                url: parsed.wpUrl,
+                user: parsed.wpUser || "",
+                password: parsed.wpAppPassword || ""
+              });
+            }
+            delete parsed.wpUrl;
+            delete parsed.wpUser;
+            delete parsed.wpAppPassword;
+          }
+          config = { ...config, ...parsed };
+          console.log("Config loaded & migrated from config.json");
+        } catch (err) {
+          console.error("Failed to parse config.json, using defaults:", err);
+        }
+      }
     }
-    
-    config = { ...config, ...parsed };
-    console.log("Config loaded & migrated from config.json");
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf8");
   } catch (err) {
-    console.error("Failed to parse config.json, using defaults:", err);
+    console.error("Error in initializeConfig:", err);
   }
 }
 
 const USERS_PATH = path.join(__dirname, "users.json");
 
-const readUsers = () => {
+const readUsers = async () => {
   try {
+    if (mongoose.connection.readyState === 1) {
+      return await User.find({}).lean();
+    }
     if (!fs.existsSync(USERS_PATH)) {
       fs.writeFileSync(USERS_PATH, "[]", "utf8");
       return [];
@@ -98,8 +189,14 @@ const readUsers = () => {
   }
 };
 
-const writeUsers = (users) => {
+const writeUsers = async (users) => {
   try {
+    if (mongoose.connection.readyState === 1) {
+      for (const u of users) {
+        await User.findOneAndUpdate({ id: u.id }, u, { upsert: true, new: true });
+      }
+      return true;
+    }
     fs.writeFileSync(USERS_PATH, JSON.stringify(users, null, 2), "utf8");
     return true;
   } catch (err) {
@@ -110,7 +207,7 @@ const writeUsers = (users) => {
 
 const JWT_SECRET = "WP_PUBLISHER_SECRET_KEY_2026";
 
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -124,7 +221,7 @@ const authMiddleware = (req, res, next) => {
       return res.status(401).json({ error: "Token không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại!" });
     }
     
-    const users = readUsers();
+    const users = await readUsers();
     const user = users.find(u => u.id === decoded.userId);
     if (!user) {
       return res.status(401).json({ error: "Người dùng không tồn tại trong hệ thống." });
@@ -283,7 +380,7 @@ app.post("/api/auth/register", async (req, res) => {
   }
 
   try {
-    const users = readUsers();
+    const users = await readUsers();
     const duplicateUser = users.find(u => u.username.toLowerCase() === username.toLowerCase());
     if (duplicateUser) {
       return res.status(400).json({ error: "Tên đăng nhập đã tồn tại trong hệ thống!" });
@@ -312,7 +409,7 @@ app.post("/api/auth/register", async (req, res) => {
     };
     
     users.push(newUser);
-    writeUsers(users);
+    await writeUsers(users);
     
     let emailSent = false;
     if (status === "pending") {
@@ -339,7 +436,7 @@ app.post("/api/auth/login", async (req, res) => {
   }
   
   try {
-    const users = readUsers();
+    const users = await readUsers();
     const user = users.find(u => 
       u.username.toLowerCase() === usernameOrEmail.toLowerCase() || 
       u.email.toLowerCase() === usernameOrEmail.toLowerCase()
@@ -387,7 +484,7 @@ app.post("/api/auth/activate", authMiddleware, async (req, res) => {
   }
   
   try {
-    const users = readUsers();
+    const users = await readUsers();
     const userIdx = users.findIndex(u => u.id === req.user.id);
     if (userIdx === -1) {
       return res.status(400).json({ error: "Không tìm thấy thông tin tài khoản." });
@@ -404,7 +501,7 @@ app.post("/api/auth/activate", authMiddleware, async (req, res) => {
     
     users[userIdx].status = "active";
     users[userIdx].activationCode = "";
-    writeUsers(users);
+    await writeUsers(users);
     
     res.json({
       success: true,
@@ -417,7 +514,7 @@ app.post("/api/auth/activate", authMiddleware, async (req, res) => {
 
 app.post("/api/auth/resend-code", authMiddleware, async (req, res) => {
   try {
-    const users = readUsers();
+    const users = await readUsers();
     const userIdx = users.findIndex(u => u.id === req.user.id);
     if (userIdx === -1) {
       return res.status(400).json({ error: "Không tìm thấy thông tin tài khoản." });
@@ -430,7 +527,7 @@ app.post("/api/auth/resend-code", authMiddleware, async (req, res) => {
     
     const newCode = Math.floor(100000 + Math.random() * 900000).toString();
     users[userIdx].activationCode = newCode;
-    writeUsers(users);
+    await writeUsers(users);
     
     const emailSent = await sendActivationEmail(user.email, user.username, newCode);
     
@@ -446,9 +543,9 @@ app.post("/api/auth/resend-code", authMiddleware, async (req, res) => {
 });
 
 // Admin Control Panel Routes
-app.get("/api/admin/users", authMiddleware, adminMiddleware, (req, res) => {
+app.get("/api/admin/users", authMiddleware, adminMiddleware, async (req, res) => {
   try {
-    const users = readUsers();
+    const users = await readUsers();
     const sanitizedUsers = users.map(u => ({
       id: u.id,
       username: u.username,
@@ -463,7 +560,7 @@ app.get("/api/admin/users", authMiddleware, adminMiddleware, (req, res) => {
   }
 });
 
-app.post("/api/admin/users/:id/status", authMiddleware, adminMiddleware, (req, res) => {
+app.post("/api/admin/users/:id/status", authMiddleware, adminMiddleware, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
   if (!["active", "suspended"].includes(status)) {
@@ -471,7 +568,7 @@ app.post("/api/admin/users/:id/status", authMiddleware, adminMiddleware, (req, r
   }
   
   try {
-    const users = readUsers();
+    const users = await readUsers();
     const userIdx = users.findIndex(u => u.id === id);
     if (userIdx === -1) {
       return res.status(404).json({ error: "Không tìm thấy thành viên." });
@@ -481,7 +578,7 @@ app.post("/api/admin/users/:id/status", authMiddleware, adminMiddleware, (req, r
     }
     
     users[userIdx].status = status;
-    writeUsers(users);
+    await writeUsers(users);
     res.json({
       success: true,
       message: `Đã cập nhật trạng thái tài khoản thành công sang: ${status === "active" ? "Cho phép sử dụng" : "Khóa tài khoản"}`
@@ -491,7 +588,7 @@ app.post("/api/admin/users/:id/status", authMiddleware, adminMiddleware, (req, r
   }
 });
 
-app.post("/api/admin/smtp", authMiddleware, adminMiddleware, (req, res) => {
+app.post("/api/admin/smtp", authMiddleware, adminMiddleware, async (req, res) => {
   const { smtpEmail, smtpPassword } = req.body;
   if (!smtpEmail || smtpEmail.trim() === "" || !smtpPassword || smtpPassword.trim() === "") {
     return res.status(400).json({ error: "Vui lòng nhập Email và Mật khẩu ứng dụng SMTP!" });
@@ -500,7 +597,20 @@ app.post("/api/admin/smtp", authMiddleware, adminMiddleware, (req, res) => {
   try {
     config.smtpEmail = smtpEmail.trim();
     config.smtpPassword = smtpPassword.trim();
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf8");
+    if (mongoose.connection.readyState === 1) {
+      let dbConfig = await Config.findOne({});
+      if (dbConfig) {
+        dbConfig.smtpEmail = config.smtpEmail;
+        dbConfig.smtpPassword = config.smtpPassword;
+        await dbConfig.save();
+      } else {
+        dbConfig = new Config(config);
+        await dbConfig.save();
+      }
+      config = dbConfig.toObject();
+    } else {
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf8");
+    }
     res.json({ success: true, message: "Đã cập nhật cấu hình gửi mail SMTP thành công!" });
   } catch (err) {
     res.status(500).json({ error: "Lỗi lưu cấu hình SMTP: " + err.message });
@@ -513,13 +623,25 @@ app.get("/api/config", (req, res) => {
 });
 
 // Update config
-app.post("/api/config", (req, res) => {
+app.post("/api/config", async (req, res) => {
   try {
     config = { ...config, ...req.body };
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf8");
+    if (mongoose.connection.readyState === 1) {
+      let dbConfig = await Config.findOne({});
+      if (dbConfig) {
+        Object.assign(dbConfig, req.body);
+        await dbConfig.save();
+      } else {
+        dbConfig = new Config(config);
+        await dbConfig.save();
+      }
+      config = dbConfig.toObject();
+    } else {
+      fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), "utf8");
+    }
     res.json({ success: true, message: "Configuration saved successfully!" });
   } catch (err) {
-    res.status(500).json({ error: "Failed to save configuration" });
+    res.status(500).json({ error: "Failed to save configuration: " + err.message });
   }
 });
 
@@ -621,32 +743,50 @@ function logStep(taskId, message, type = "info") {
 }
 
 // Save history helper
-function saveToHistory(postData) {
-  const historyPath = path.join(__dirname, "history.json");
-  let history = [];
-  if (fs.existsSync(historyPath)) {
-    try {
-      history = JSON.parse(fs.readFileSync(historyPath, "utf8"));
-    } catch (e) {
-      history = [];
+async function saveToHistory(postData) {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const historyItem = new History(postData);
+      await historyItem.save();
+      console.log("Saved post to MongoDB History successfully!");
+      return;
     }
+    const historyPath = path.join(__dirname, "history.json");
+    let history = [];
+    if (fs.existsSync(historyPath)) {
+      try {
+        history = JSON.parse(fs.readFileSync(historyPath, "utf8"));
+      } catch (e) {
+        history = [];
+      }
+    }
+    history.unshift(postData);
+    fs.writeFileSync(historyPath, JSON.stringify(history, null, 2), "utf8");
+  } catch (err) {
+    console.error("Failed to save history:", err);
   }
-  history.unshift(postData);
-  fs.writeFileSync(historyPath, JSON.stringify(history, null, 2), "utf8");
 }
 
 // Get history
-app.get("/api/history", (req, res) => {
-  const historyPath = path.join(__dirname, "history.json");
-  if (fs.existsSync(historyPath)) {
-    try {
-      const history = JSON.parse(fs.readFileSync(historyPath, "utf8"));
+app.get("/api/history", async (req, res) => {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const history = await History.find({}).sort({ _id: -1 }).lean();
       return res.json(history);
-    } catch (e) {
-      return res.json([]);
     }
+    const historyPath = path.join(__dirname, "history.json");
+    if (fs.existsSync(historyPath)) {
+      try {
+        const history = JSON.parse(fs.readFileSync(historyPath, "utf8"));
+        return res.json(history);
+      } catch (e) {
+        return res.json([]);
+      }
+    }
+    res.json([]);
+  } catch (err) {
+    res.status(500).json({ error: "Lỗi lấy lịch sử: " + err.message });
   }
-  res.json([]);
 });
 
 // Helper to analyze product image using GPT-4o Vision (gpt-4o-mini)
@@ -1635,7 +1775,7 @@ Sử dụng các URL ảnh nha khoa chất lượng cao từ Unsplash làm thu�
             };
           }
 
-          saveToHistory({
+          await saveToHistory({
             taskId: taskId + "_" + site.id,
             title: siteTitle,
             link: postLink,
@@ -2138,7 +2278,7 @@ app.post("/api/publish-single", async (req, res) => {
       });
 
       // Save to history
-      saveToHistory({
+      await saveToHistory({
         taskId: `${taskId}_${site.id}`,
         title: title,
         link: postLink,
@@ -2385,6 +2525,25 @@ Nội dung tóm tắt: ${cleaned}`;
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+
+const startServer = async () => {
+  const MONGODB_URI = process.env.MONGODB_URI;
+  if (MONGODB_URI) {
+    try {
+      await mongoose.connect(MONGODB_URI);
+      console.log("Connected to MongoDB Atlas successfully!");
+    } catch (err) {
+      console.error("Failed to connect to MongoDB Atlas, falling back to local storage:", err.message);
+    }
+  } else {
+    console.warn("MONGODB_URI environment variable is missing. Falling back to local storage.");
+  }
+  
+  await initializeConfig();
+  
+  app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+  });
+};
+
+startServer();
