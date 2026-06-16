@@ -230,10 +230,7 @@ const authMiddleware = async (req, res, next) => {
     if (user.status === "suspended") {
       return res.status(403).json({ error: "Tài khoản của bạn đã bị khóa bởi Quản trị viên." });
     }
-    
-    if (user.status === "pending" && req.path !== "/api/auth/activate" && req.path !== "/api/auth/resend-code") {
-      return res.status(403).json({ error: "Tài khoản chưa được kích hoạt. Vui lòng nhập mã xác thực gửi tới email của bạn." });
-    }
+
     
     req.user = user;
     next();
@@ -392,10 +389,9 @@ app.post("/api/auth/register", async (req, res) => {
     
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-    const activationCode = Math.floor(100000 + Math.random() * 900000).toString();
     const isFirstUser = users.length === 0;
     const role = isFirstUser ? "admin" : "user";
-    const status = isFirstUser ? "active" : "pending";
+    const status = "active"; // Always active, no activation screen
     
     const newUser = {
       id: "usr_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
@@ -403,7 +399,6 @@ app.post("/api/auth/register", async (req, res) => {
       email,
       password: hashedPassword,
       status,
-      activationCode,
       role,
       createdAt: new Date().toISOString()
     };
@@ -411,18 +406,14 @@ app.post("/api/auth/register", async (req, res) => {
     users.push(newUser);
     await writeUsers(users);
     
-    let emailSent = false;
-    if (status === "pending") {
-      emailSent = await sendActivationEmail(email, username, activationCode);
-      // Gửi thông báo đăng ký kèm mã kích hoạt tới email của Admin
-      await sendAdminNotificationEmail(newUser);
-    }
+    // Gửi thông báo đăng ký tới email của Admin
+    await sendAdminNotificationEmail(newUser);
     
     res.json({
       success: true,
       message: isFirstUser 
-        ? "Đăng ký tài khoản Admin thành công! Tài khoản đã được kích hoạt và sẵn sàng sử dụng." 
-        : `Đăng ký thành công! ${emailSent ? "Mã kích hoạt đã được gửi tới email của bạn." : "Đăng ký thành công, vui lòng lấy mã xác thực trong file users.json hoặc log server (do chưa cấu hình SMTP)."}`
+        ? "Đăng ký tài khoản Admin thành công! Tài khoản đã sẵn sàng sử dụng." 
+        : "Đăng ký thành công! Bạn đã có thể đăng nhập để sử dụng phần mềm ngay lập tức."
     });
   } catch (err) {
     res.status(500).json({ error: "Lỗi đăng ký tài khoản: " + err.message });
@@ -2549,6 +2540,33 @@ const startServer = async () => {
   }
   
   await initializeConfig();
+
+  // Activate all existing users to ensure no lock screen for anyone
+  if (mongoose.connection.readyState === 1) {
+    try {
+      await User.updateMany({ status: "pending" }, { status: "active" });
+      console.log("All pending users have been activated in MongoDB Atlas.");
+    } catch (err) {
+      console.error("Failed to activate existing users in MongoDB:", err.message);
+    }
+  } else {
+    try {
+      const users = await readUsers();
+      let modified = false;
+      users.forEach(u => {
+        if (u.status === "pending") {
+          u.status = "active";
+          modified = true;
+        }
+      });
+      if (modified) {
+        await writeUsers(users);
+        console.log("All pending local users have been activated.");
+      }
+    } catch (err) {
+      console.error("Failed to activate existing local users:", err.message);
+    }
+  }
   
   app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
