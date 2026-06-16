@@ -348,6 +348,21 @@ export async function generateAndCompositeImage({
     } catch (dalleErr) {
       throw new Error(`Tạo ảnh DALL-E 3 thất bại: ${dalleErr.message}`);
     }
+  } else if (imageModel === "pollinations") {
+    try {
+      console.log(`[ImageComposer] Calling Pollinations.ai to generate background for prompt: "${prompt}"`);
+      const encodedPrompt = encodeURIComponent(prompt);
+      const pollinationsUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&nologo=true&private=true&model=flux`;
+      
+      const downloadResponse = await axios.get(pollinationsUrl, { 
+        responseType: "arraybuffer",
+        timeout: 30000
+      });
+      bgBuffer = Buffer.from(downloadResponse.data);
+      console.log("[ImageComposer] Pollinations.ai background generated successfully!");
+    } catch (pollinationsErr) {
+      throw new Error(`Tạo ảnh Pollinations.ai thất bại: ${pollinationsErr.message}`);
+    }
   } else {
     // Unsplash
     const selectedBackgroundUrl = getCuratedBackground(prompt, excludeUrls);

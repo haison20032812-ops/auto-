@@ -1545,6 +1545,7 @@ function App() {
                       <option value="unsplash">Unsplash Stock (Chọn lọc nha khoa chuyên nghiệp)</option>
                       <option value="dalle3">OpenAI DALL-E 3 (Cần API Key OpenAI)</option>
                       <option value="leonardo">Leonardo.ai (Tạo hình ảnh chất lượng cao)</option>
+                      <option value="pollinations">Pollinations.ai (AI vẽ miễn phí - Không cần Key)</option>
                     </select>
                   </div>
                   <div className="form-group">
@@ -1941,6 +1942,7 @@ function App() {
                           <option value="unsplash">Ảnh: Unsplash</option>
                           <option value="dalle3">Ảnh: DALL-E 3</option>
                           <option value="leonardo">Ảnh: Leonardo</option>
+                          <option value="pollinations">Ảnh: Pollinations</option>
                         </select>
                         <button 
                           type="button" 
