@@ -124,7 +124,7 @@ function App() {
   const [isRunningRssScenario, setIsRunningRssScenario] = useState(false);
   const [rssError, setRssError] = useState(null);
   const [rssUrlInput, setRssUrlInput] = useState("");
-  const [rssTargetWebsite, setRssTargetWebsite] = useState("");
+  const [rssSelectedWebIds, setRssSelectedWebIds] = useState([]);
 
   const [user, setUser] = useState(() => {
     try {
@@ -339,13 +339,17 @@ function App() {
   }, [activeTab, user]);
 
   const handleRunRssScenario = async () => {
+    if (!rssSelectedWebIds || rssSelectedWebIds.length === 0) {
+      alert("❌ Vui lòng chọn ít nhất một website vệ tinh để đăng bài!");
+      return;
+    }
     setIsRunningRssScenario(true);
     setRssScenarioResults(null);
     setRssError(null);
     try {
       const res = await axios.post(`${BACKEND_URL}/api/run-rss-scenario`, {
         rssUrl: rssUrlInput,
-        websiteId: rssTargetWebsite || undefined,
+        websiteIds: rssSelectedWebIds,
         geminiKey: config.geminiKey,
         alibabaKey: config.alibabaKey,
         openaiKey: config.openaiKey
@@ -460,6 +464,7 @@ function App() {
       
       if (data.websites && Array.isArray(data.websites)) {
         setSelectedWebIds(data.websites.map(w => w.id));
+        setRssSelectedWebIds(data.websites.map(w => w.id));
       }
     } catch (err) {
       console.error("Failed to load config from server:", err);
@@ -2724,18 +2729,23 @@ function App() {
                     />
                   </div>
                   <div className="form-group">
-                    <label>Website vệ tinh nhận bài</label>
-                    <select
-                      value={rssTargetWebsite}
-                      onChange={(e) => setRssTargetWebsite(e.target.value)}
-                    >
-                      <option value="">-- Website cấu hình đầu tiên (Mặc định) --</option>
-                      {(config.websites || []).map((site) => (
-                        <option key={site.id} value={site.id}>
-                          {site.name} ({site.url})
-                        </option>
-                      ))}
-                    </select>
+                    <label>Website vệ tinh nhận bài (Chọn nhiều)</label>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", maxHeight: "150px", overflowY: "auto", border: "1px solid var(--color-border)", borderRadius: "6px", padding: "0.5rem", backgroundColor: "#ffffff", marginTop: "0.25rem" }}>
+                      {(!config.websites || config.websites.length === 0) ? (
+                        <div style={{ fontSize: "0.8rem", color: "#64748b", fontStyle: "italic" }}>Chưa liên kết website nào. Hãy vào tab Cấu Hình để thêm website.</div>
+                      ) : (
+                        config.websites.map(site => (
+                          <label key={site.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", cursor: "pointer" }}>
+                            <input 
+                              type="checkbox"
+                              checked={rssSelectedWebIds.includes(site.id)}
+                              onChange={() => setRssSelectedWebIds(prev => prev.includes(site.id) ? prev.filter(id => id !== site.id) : [...prev, site.id])}
+                            />
+                            <strong>{site.name}</strong> <span style={{ color: "#64748b" }}>({site.url})</span>
+                          </label>
+                        ))
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -2884,51 +2894,94 @@ function App() {
                         border: "3px solid white",
                         boxShadow: "0 0 0 2px #e2e8f0"
                       }}></div>
-                      <strong>Bước 3: Alibaba Qwen AI viết lại bài & Chèn backlink ngẫu nhiên</strong>
+                      <strong>Bước 3: AI viết lại bài viết độc bản cho từng website mục tiêu</strong>
                       {isRunningRssScenario && rssScenarioResults?.step2 && !rssScenarioResults?.step3 && (
-                        <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>Đang gửi yêu cầu AI tối ưu chuẩn SEO (Có thể mất 15-30 giây)...</div>
+                        <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>Đang gửi yêu cầu AI tối ưu chuẩn SEO độc bản (Có thể mất 15-30 giây)...</div>
                       )}
-                      {rssScenarioResults?.step3 && (
-                        <div style={{
-                          marginTop: "0.5rem",
-                          padding: "0.75rem",
-                          backgroundColor: "#f8fafc",
-                          borderRadius: "6px",
-                          fontSize: "0.85rem"
-                        }}>
-                          {rssScenarioResults.step3.success ? (
-                            <>
-                              <div style={{ color: "#16a34a", fontWeight: "bold", marginBottom: "0.25rem" }}>
-                                ✓ Hoàn thành viết lại bài (Model: {rssScenarioResults.step3.data?.modelUsed})
-                              </div>
-                              <div style={{ marginBottom: "0.5rem" }}>
-                                <strong>Backlink được chèn:</strong>{" "}
-                                <a href={rssScenarioResults.step3.data?.backlink} target="_blank" rel="noreferrer" style={{ color: "#3b82f6", fontWeight: "bold" }}>
-                                  {rssScenarioResults.step3.data?.anchorText} ({rssScenarioResults.step3.data?.backlink})
-                                </a>
-                              </div>
-                              <details style={{ marginTop: "0.25rem" }}>
-                                <summary style={{ cursor: "pointer", color: "#3b82f6", fontWeight: "500" }}>Xem bài viết HTML gốc</summary>
-                                <pre style={{
-                                  padding: "0.5rem",
-                                  backgroundColor: "#0f172a",
-                                  color: "#f8fafc",
-                                  borderRadius: "4px",
-                                  overflowX: "auto",
-                                  marginTop: "0.5rem",
-                                  fontSize: "0.75rem",
-                                  maxHeight: "200px",
-                                  overflowY: "auto",
-                                  whiteSpace: "pre-wrap"
-                                }}>
-                                  {rssScenarioResults.step3.data?.rewrittenHtml}
-                                </pre>
-                              </details>
-                            </>
-                          ) : (
-                            <div style={{ color: "#dc2626" }}>✗ Thất bại: {rssScenarioResults.step3.error}</div>
-                          )}
+                      
+                      {rssScenarioResults?.results && Array.isArray(rssScenarioResults.results) ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
+                          {rssScenarioResults.results.map(res => (
+                            <div key={res.siteId} style={{ padding: "0.75rem", backgroundColor: "#f8fafc", borderRadius: "6px", fontSize: "0.85rem", border: "1px solid #e2e8f0" }}>
+                              <div style={{ fontWeight: "700", color: "var(--color-primary)", marginBottom: "0.25rem" }}>🌐 Website: {res.siteName}</div>
+                              {res.step3?.success ? (
+                                <>
+                                  <div style={{ color: "#16a34a", fontWeight: "bold", marginBottom: "0.25rem" }}>
+                                    ✓ Hoàn thành viết lại bài (Model: {res.step3.data?.modelUsed})
+                                  </div>
+                                  <div style={{ marginBottom: "0.5rem" }}>
+                                    <strong>Backlink được chèn:</strong>{" "}
+                                    <a href={res.step3.data?.backlink} target="_blank" rel="noreferrer" style={{ color: "#3b82f6", fontWeight: "bold" }}>
+                                      {res.step3.data?.anchorText} ({res.step3.data?.backlink})
+                                    </a>
+                                  </div>
+                                  <details style={{ marginTop: "0.25rem" }}>
+                                    <summary style={{ cursor: "pointer", color: "#3b82f6", fontWeight: "500" }}>Xem bài viết HTML độc bản</summary>
+                                    <pre style={{
+                                      padding: "0.5rem",
+                                      backgroundColor: "#0f172a",
+                                      color: "#f8fafc",
+                                      borderRadius: "4px",
+                                      overflowX: "auto",
+                                      marginTop: "0.5rem",
+                                      fontSize: "0.75rem",
+                                      maxHeight: "150px",
+                                      overflowY: "auto",
+                                      whiteSpace: "pre-wrap"
+                                    }}>
+                                      {res.step3.data?.rewrittenHtml}
+                                    </pre>
+                                  </details>
+                                </>
+                              ) : (
+                                <div style={{ color: "#dc2626" }}>✗ Thất bại: {res.step3?.error || "Đang xử lý..."}</div>
+                              )}
+                            </div>
+                          ))}
                         </div>
+                      ) : (
+                        rssScenarioResults?.step3 && (
+                          <div style={{
+                            marginTop: "0.5rem",
+                            padding: "0.75rem",
+                            backgroundColor: "#f8fafc",
+                            borderRadius: "6px",
+                            fontSize: "0.85rem"
+                          }}>
+                            {rssScenarioResults.step3.success ? (
+                              <>
+                                <div style={{ color: "#16a34a", fontWeight: "bold", marginBottom: "0.25rem" }}>
+                                  ✓ Hoàn thành viết lại bài (Model: {rssScenarioResults.step3.data?.modelUsed})
+                                </div>
+                                <div style={{ marginBottom: "0.5rem" }}>
+                                  <strong>Backlink được chèn:</strong>{" "}
+                                  <a href={rssScenarioResults.step3.data?.backlink} target="_blank" rel="noreferrer" style={{ color: "#3b82f6", fontWeight: "bold" }}>
+                                    {rssScenarioResults.step3.data?.anchorText} ({rssScenarioResults.step3.data?.backlink})
+                                  </a>
+                                </div>
+                                <details style={{ marginTop: "0.25rem" }}>
+                                  <summary style={{ cursor: "pointer", color: "#3b82f6", fontWeight: "500" }}>Xem bài viết HTML gốc</summary>
+                                  <pre style={{
+                                    padding: "0.5rem",
+                                    backgroundColor: "#0f172a",
+                                    color: "#f8fafc",
+                                    borderRadius: "4px",
+                                    overflowX: "auto",
+                                    marginTop: "0.5rem",
+                                    fontSize: "0.75rem",
+                                    maxHeight: "200px",
+                                    overflowY: "auto",
+                                    whiteSpace: "pre-wrap"
+                                  }}>
+                                    {rssScenarioResults.step3.data?.rewrittenHtml}
+                                  </pre>
+                                </details>
+                              </>
+                            ) : (
+                              <div style={{ color: "#dc2626" }}>✗ Thất bại: {rssScenarioResults.step3.error}</div>
+                            )}
+                          </div>
+                        )
                       )}
                     </div>
 
@@ -2945,47 +2998,86 @@ function App() {
                         border: "3px solid white",
                         boxShadow: "0 0 0 2px #e2e8f0"
                       }}></div>
-                      <strong>Bước 4: Đăng lên WordPress Satellite (Draft Mode)</strong>
+                      <strong>Bước 4: Đăng bài nháp lên các Website vệ tinh</strong>
                       {isRunningRssScenario && rssScenarioResults?.step3 && !rssScenarioResults?.step4 && (
-                        <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>Đang kết nối WordPress API và tạo bản nháp...</div>
+                        <div style={{ color: "#64748b", fontSize: "0.85rem", fontStyle: "italic" }}>Đang kết nối WordPress API và tải bản nháp lên...</div>
                       )}
-                      {rssScenarioResults?.step4 && (
-                        <div style={{
-                          marginTop: "0.5rem",
-                          padding: "0.75rem",
-                          backgroundColor: "#f8fafc",
-                          borderRadius: "6px",
-                          fontSize: "0.85rem"
-                        }}>
-                          {rssScenarioResults.step4.success ? (
-                            <>
-                              <div style={{ color: "#16a34a", fontWeight: "bold", marginBottom: "0.5rem" }}>
-                                🎉 Đăng bài nháp thành công! (ID: {rssScenarioResults.step4.data?.postId})
-                              </div>
-                              <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-                                <div><strong>Trang vệ tinh:</strong> {rssScenarioResults.step4.data?.siteName}</div>
-                                <a
-                                  href={rssScenarioResults.step4.data?.postLink}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="btn"
-                                  style={{
-                                    padding: "0.4rem 0.8rem",
-                                    fontSize: "0.8rem",
-                                    background: "#3b82f6",
-                                    color: "white",
-                                    border: "none",
-                                    borderRadius: "4px"
-                                  }}
-                                >
-                                  🔗 Xem Bản Nháp trên Web
-                                </a>
-                              </div>
-                            </>
-                          ) : (
-                            <div style={{ color: "#dc2626" }}>✗ Thất bại: {rssScenarioResults.step4.error}</div>
-                          )}
+                      
+                      {rssScenarioResults?.results && Array.isArray(rssScenarioResults.results) ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", marginTop: "0.5rem" }}>
+                          {rssScenarioResults.results.map(res => (
+                            <div key={res.siteId} style={{ padding: "0.75rem", backgroundColor: "#f8fafc", borderRadius: "6px", fontSize: "0.85rem", border: "1px solid #e2e8f0" }}>
+                              <div style={{ fontWeight: "700", color: "var(--color-primary)", marginBottom: "0.25rem" }}>🌐 Website: {res.siteName}</div>
+                              {res.step4?.success ? (
+                                <>
+                                  <div style={{ color: "#16a34a", fontWeight: "bold", marginBottom: "0.5rem" }}>
+                                    🎉 Đăng bài nháp thành công! (ID: {res.step4.data?.postId})
+                                  </div>
+                                  <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+                                    <div><strong>URL:</strong> <a href={res.siteUrl} target="_blank" rel="noreferrer">{res.siteUrl}</a></div>
+                                    <a
+                                      href={res.step4.data?.postLink}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="btn"
+                                      style={{
+                                        padding: "0.4rem 0.8rem",
+                                        fontSize: "0.8rem",
+                                        background: "#3b82f6",
+                                        color: "white",
+                                        border: "none",
+                                        borderRadius: "4px"
+                                      }}
+                                    >
+                                      🔗 Xem Bản Nháp
+                                    </a>
+                                  </div>
+                                </>
+                              ) : (
+                                <div style={{ color: "#dc2626" }}>✗ Thất bại: {res.step4?.error || "Đang xử lý..."}</div>
+                              )}
+                            </div>
+                          ))}
                         </div>
+                      ) : (
+                        rssScenarioResults?.step4 && (
+                          <div style={{
+                            marginTop: "0.5rem",
+                            padding: "0.75rem",
+                            backgroundColor: "#f8fafc",
+                            borderRadius: "6px",
+                            fontSize: "0.85rem"
+                          }}>
+                            {rssScenarioResults.step4.success ? (
+                              <>
+                                <div style={{ color: "#16a34a", fontWeight: "bold", marginBottom: "0.5rem" }}>
+                                  🎉 Đăng bài nháp thành công! (ID: {rssScenarioResults.step4.data?.postId})
+                                </div>
+                                <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+                                  <div><strong>Trang vệ tinh:</strong> {rssScenarioResults.step4.data?.siteName}</div>
+                                  <a
+                                    href={rssScenarioResults.step4.data?.postLink}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="btn"
+                                    style={{
+                                      padding: "0.4rem 0.8rem",
+                                      fontSize: "0.8rem",
+                                      background: "#3b82f6",
+                                      color: "white",
+                                      border: "none",
+                                      borderRadius: "4px"
+                                    }}
+                                  >
+                                    🔗 Xem Bản Nháp trên Web
+                                  </a>
+                                </div>
+                              </>
+                            ) : (
+                              <div style={{ color: "#dc2626" }}>✗ Thất bại: {rssScenarioResults.step4.error}</div>
+                            )}
+                          </div>
+                        )
                       )}
                     </div>
 

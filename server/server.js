@@ -2348,7 +2348,7 @@ app.post("/api/publish-single", async (req, res) => {
 
 // Route: Run the 4-step RSS automation scenario
 app.post("/api/run-rss-scenario", async (req, res) => {
-  const { rssUrl, websiteId } = req.body;
+  const { rssUrl, websiteId, websiteIds } = req.body;
   
   const steps = {
     step1: { name: "Lấy tin tức/RSS", success: false, data: null, error: null },
@@ -2356,6 +2356,27 @@ app.post("/api/run-rss-scenario", async (req, res) => {
     step3: { name: "AI viết lại & chèn backlink", success: false, data: null, error: null },
     step4: { name: "Đăng lên WordPress ở chế độ Draft", success: false, data: null, error: null }
   };
+
+  let targetIds = [];
+  if (Array.isArray(websiteIds)) {
+    targetIds = websiteIds;
+  } else if (websiteId) {
+    targetIds = [websiteId];
+  }
+
+  if (targetIds.length === 0) {
+    if (config.websites && config.websites.length > 0) {
+      targetIds = [config.websites[0].id];
+    }
+  }
+
+  if (targetIds.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: "Không có website vệ tinh nào được cấu hình trong hệ thống.",
+      steps
+    });
+  }
 
   if (!rssUrl || rssUrl.trim() === "") {
     return res.status(400).json({
@@ -2460,12 +2481,36 @@ app.post("/api/run-rss-scenario", async (req, res) => {
     steps.step2.success = true;
     steps.step2.data = { cleanedText: cleaned };
 
-    // --- STEP 3: AI Rewrite and Backlink Injection ---
-    console.log("[Scenario] Step 3: Rewriting article with AI");
-    const randomBacklink = Math.random() > 0.5 ? "https://maxdent.vn" : "http://ddd.vn";
-    const anchorText = randomBacklink.includes("maxdent") ? "Nha khoa MaxDent" : "Kiến thức nha khoa";
+    // --- LOOP THROUGH TARGET SITES ---
+    const results = [];
+    
+    for (const siteId of targetIds) {
+      const site = (config.websites || []).find(w => w.id === siteId);
+      if (!site) {
+        results.push({
+          siteId,
+          siteName: `Không rõ (ID: ${siteId})`,
+          siteUrl: "",
+          step3: { success: false, error: "Website không tồn tại trong cấu hình hệ thống" },
+          step4: { success: false, error: "Bỏ qua do bước trước thất bại" }
+        });
+        continue;
+      }
 
-    const aiPrompt = `Hãy đóng vai là một nhà viết bài blog chuẩn SEO chuyên nghiệp. Hãy viết lại bài viết dưới đây thành một bài viết hướng dẫn chuyên sâu, chi tiết và dài hạn bằng Tiếng Việt.
+      const siteResult = {
+        siteId,
+        siteName: site.name,
+        siteUrl: site.url,
+        step3: { success: false, data: null, error: null },
+        step4: { success: false, data: null, error: null }
+      };
+
+      // --- STEP 3: AI Rewrite for this site ---
+      try {
+        const randomBacklink = Math.random() > 0.5 ? "https://maxdent.vn" : "http://ddd.vn";
+        const anchorText = randomBacklink.includes("maxdent") ? "Nha khoa MaxDent" : "Kiến thức nha khoa";
+
+        const aiPrompt = `Hãy đóng vai là một nhà viết bài blog chuẩn SEO chuyên nghiệp. Hãy viết lại bài viết dưới đây thành một bài viết hướng dẫn chuyên sâu, chi tiết và dài hạn bằng Tiếng Việt.
 YÊU CẦU ĐỘ DÀI: Bài viết mới BẮT BUỘC phải có độ dài từ 1500 đến 2000 từ. 
 Để đạt được độ dài tối thiểu 1500 từ, hãy phân tích kỹ lưỡng các khía cạnh liên quan, giải thích sâu các thuật ngữ nha khoa, mô tả chi tiết từng bước quy trình điều trị/chăm sóc, phân tích ưu nhược điểm, đưa ra lời khuyên từ bác sĩ chuyên gia, và thêm phần Các câu hỏi thường gặp (FAQ) có giải thích chi tiết ở cuối bài.
 BẮT BUỘC chèn đúng một liên kết (backlink) trỏ về địa chỉ sau vào vị trí phù hợp nhất trong văn cảnh bài viết:
@@ -2478,87 +2523,94 @@ Bài viết gốc:
 Tiêu đề: ${title}
 Nội dung tóm tắt: ${cleaned}`;
 
-    let rewrittenHtml = "";
-    let modelUsed = "";
+        let rewrittenHtml = "";
+        let modelUsed = "";
 
-    // Strict Alibaba (Qwen) Only
-    if (!alibabaKey || alibabaKey.trim() === "") {
-      throw new Error("Vui lòng cấu hình API Key cho Alibaba Cloud trong cài đặt để sử dụng kịch bản RSS này.");
-    }
+        if (!alibabaKey || alibabaKey.trim() === "") {
+          throw new Error("Khóa API Alibaba Cloud trống hoặc chưa được cấu hình.");
+        }
 
-    try {
-      console.log("[Scenario] Attempting Alibaba Qwen rewrite...");
-      const qwen = new OpenAI({
-        apiKey: alibabaKey,
-        baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-      });
-      const completion = await qwen.chat.completions.create({
-        model: "qwen-plus",
-        messages: [
-          { role: "system", content: "You are a professional copywriter who returns pure HTML format and writes extensive, detailed articles." },
-          { role: "user", content: aiPrompt }
-        ],
-        max_tokens: 4000
-      });
-      rewrittenHtml = completion.choices[0].message.content;
-      modelUsed = "Qwen Plus";
-    } catch (err) {
-      console.error("[Scenario] Qwen failed:", err.message);
-      throw new Error(`Alibaba Qwen rewrite failed: ${err.message}`);
-    }
+        const qwen = new OpenAI({
+          apiKey: alibabaKey,
+          baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        });
+        const completion = await qwen.chat.completions.create({
+          model: "qwen-plus",
+          messages: [
+            { role: "system", content: "You are a professional copywriter who returns pure HTML format and writes extensive, detailed articles." },
+            { role: "user", content: aiPrompt }
+          ],
+          max_tokens: 4000
+        });
+        rewrittenHtml = completion.choices[0].message.content;
+        modelUsed = "Qwen Plus";
+        rewrittenHtml = rewrittenHtml.replace(/^```html\s*/i, "").replace(/```\s*$/, "").trim();
 
-    // Clean up markdown block characters if AI returned them
-    rewrittenHtml = rewrittenHtml.replace(/^```html\s*/i, "").replace(/```\s*$/, "").trim();
+        siteResult.step3.success = true;
+        siteResult.step3.data = { modelUsed, rewrittenHtml, backlink: randomBacklink, anchorText };
 
-    steps.step3.success = true;
-    steps.step3.data = { modelUsed, rewrittenHtml, backlink: randomBacklink, anchorText };
+        // --- STEP 4: WordPress Upload ---
+        const cleanWpUrl = site.url.replace(/\/+$/, "");
+        const apiEndpoint = `${cleanWpUrl}/wp-json/wp/v2/posts`;
+        const authHeader = `Basic ${Buffer.from(`${site.user}:${site.password}`).toString("base64")}`;
 
-    // --- STEP 4: Push to WordPress (Draft Mode Mandatory) ---
-    console.log("[Scenario] Step 4: Pushing post to WordPress");
-    let site = null;
-    if (websiteId) {
-      site = (config.websites || []).find(w => w.id === websiteId);
-    } else {
-      site = config.websites && config.websites[0];
-    }
+        const postResponse = await axios.post(apiEndpoint, {
+          title: `[Tái bản Scenario] ${title}`,
+          content: rewrittenHtml,
+          status: "draft"
+        }, {
+          headers: {
+            Authorization: authHeader,
+            "Content-Type": "application/json"
+          },
+          timeout: 30000
+        });
 
-    if (!site) {
-      throw new Error("Không có website vệ tinh nào được cấu hình trong hệ thống.");
-    }
+        // Add to history database
+        await saveToHistory({
+          taskId: "scenario_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
+          title: `[Tái bản Scenario] ${title}`,
+          link: postResponse.data.link,
+          topic: title,
+          websiteName: site.name,
+          websiteUrl: site.url,
+          timestamp: new Date().toISOString()
+        });
 
-    const cleanWpUrl = site.url.replace(/\/+$/, "");
-    const apiEndpoint = `${cleanWpUrl}/wp-json/wp/v2/posts`;
-    const authHeader = `Basic ${Buffer.from(`${site.user}:${site.password}`).toString("base64")}`;
+        siteResult.step4.success = true;
+        siteResult.siteUrl = postResponse.data.link; // Update with post url
+        siteResult.step4.data = {
+          postId: postResponse.data.id,
+          postLink: postResponse.data.link,
+          siteName: site.name,
+          siteUrl: site.url,
+          status: "draft"
+        };
 
-    let postResponse;
-    try {
-      postResponse = await axios.post(apiEndpoint, {
-        title: `[Tái bản Scenario] ${title}`,
-        content: rewrittenHtml,
-        status: "draft" // Draft mode is MANDATORY
-      }, {
-        headers: {
-          Authorization: authHeader,
-          "Content-Type": "application/json"
-        },
-        timeout: 30000
-      });
-    } catch (err) {
-      let wpErr = err.message;
-      if (err.response && err.response.data) {
-        wpErr += ` - ${JSON.stringify(err.response.data)}`;
+      } catch (err) {
+        console.error(`[Scenario] Failed for site ${site.name}:`, err.message);
+        if (!siteResult.step3.success) {
+          siteResult.step3.error = err.message;
+        } else {
+          siteResult.step4.error = err.message;
+        }
       }
-      throw new Error(`WordPress error: ${wpErr}`);
+
+      results.push(siteResult);
     }
 
-    steps.step4.success = true;
-    steps.step4.data = {
-      postId: postResponse.data.id,
-      postLink: postResponse.data.link,
-      siteName: site.name,
-      siteUrl: site.url,
-      status: "draft"
-    };
+    // Update main steps success/fail flags
+    steps.step3.success = results.some(r => r.step3.success);
+    if (!steps.step3.success) {
+      steps.step3.error = results.map(r => `${r.siteName}: ${r.step3.error}`).join(" | ");
+    }
+    steps.step4.success = results.some(r => r.step4.success);
+    if (!steps.step4.success) {
+      steps.step4.error = results.map(r => `${r.siteName}: ${r.step4.error}`).join(" | ");
+    }
+
+    // Attach results list to steps for UI rendering
+    steps.results = results;
 
     res.json({ success: true, steps });
 
