@@ -49,7 +49,10 @@ let config = {
   hasLogos: true,
   backlinks: [],
   smtpEmail: "",
-  smtpPassword: ""
+  smtpPassword: "",
+  defaultRssUrl: "",
+  defaultRssWebsites: [],
+  cronSecret: "cron_secret_" + Math.random().toString(36).substr(2, 8)
 };
 
 // MongoDB Schemas & Models
@@ -84,7 +87,10 @@ const configSchema = new mongoose.Schema({
   hasLogos: { type: Boolean, default: true },
   backlinks: { type: Array, default: [] },
   smtpEmail: { type: String, default: "" },
-  smtpPassword: { type: String, default: "" }
+  smtpPassword: { type: String, default: "" },
+  defaultRssUrl: { type: String, default: "" },
+  defaultRssWebsites: { type: Array, default: [] },
+  cronSecret: { type: String, default: "" }
 }, { strict: false });
 const Config = mongoose.model("Config", configSchema);
 
@@ -2621,6 +2627,264 @@ Nội dung tóm tắt: ${cleaned}`;
       error: err.message,
       steps
     });
+  }
+});
+
+// Route: Automate the RSS scenario via secure daily Webhook
+app.get("/api/cron/run-rss-scenario", async (req, res) => {
+  const secret = req.query.secret;
+  
+  // Validate secret
+  if (!secret || secret !== config.cronSecret) {
+    return res.status(401).json({ success: false, error: "Mã bảo mật Webhook không đúng hoặc chưa được cung cấp." });
+  }
+
+  const rssUrl = config.defaultRssUrl;
+  const targetIds = config.defaultRssWebsites || [];
+
+  if (!rssUrl || rssUrl.trim() === "") {
+    return res.status(400).json({ success: false, error: "Đường dẫn RSS mặc định chưa được cấu hình." });
+  }
+
+  if (targetIds.length === 0) {
+    return res.status(400).json({ success: false, error: "Chưa cấu hình danh sách website nhận bài tự động." });
+  }
+
+  const alibabaKey = config.alibabaKey;
+  if (!alibabaKey || alibabaKey.trim() === "") {
+    return res.status(400).json({ success: false, error: "Chưa cấu hình API Key Alibaba Cloud trong hệ thống." });
+  }
+
+  const steps = {
+    step1: { name: "Lấy tin tức/RSS", success: false, data: null, error: null },
+    step2: { name: "Lọc sạch HTML (Text Parser)", success: false, data: null, error: null },
+    step3: { name: "AI viết lại & chèn backlink", success: false, data: null, error: null },
+    step4: { name: "Đăng lên WordPress ở chế độ Draft", success: false, data: null, error: null }
+  };
+
+  try {
+    // --- STEP 1: Fetch RSS Feed ---
+    console.log(`[Cron RSS] Fetching content from ${rssUrl}`);
+    let xml = "";
+    try {
+      const rssResponse = await axios.get(rssUrl, { 
+        timeout: 15000,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      });
+      xml = rssResponse.data;
+    } catch (err) {
+      throw new Error(`Không thể lấy dữ liệu từ RSS URL: ${err.message}`);
+    }
+
+    let rssItems = [];
+    const itemRegexGlobal = /<item>([\s\S]*?)<\/item>/g;
+    const matches = xml.match(itemRegexGlobal) || [];
+
+    for (const itemXml of matches) {
+      const titleMatch = itemXml.match(/<title><!\[CDATA\[([\s\S]*?)\]\]><\/title>/) || itemXml.match(/<title>(.*?)<\/title>/);
+      const linkMatch = itemXml.match(/<link><!\[CDATA\[([\s\S]*?)\]\]><\/link>/) || itemXml.match(/<link>(.*?)<\/link>/);
+      const descMatch = itemXml.match(/<description><!\[CDATA\[([\s\S]*?)\]\]><\/description>/) || itemXml.match(/<description>(.*?)<\/description>/);
+
+      const title = titleMatch ? titleMatch[1].trim() : "";
+      const link = linkMatch ? linkMatch[1].trim() : "";
+      const rawDescription = descMatch ? descMatch[1].trim() : "";
+
+      if (title && link) {
+        rssItems.push({ title, link, rawDescription });
+      }
+    }
+
+    // Fallback if it is a single article URL instead of RSS
+    if (rssItems.length === 0) {
+      console.log("[Cron RSS] No items found. Checking if it's a direct HTML web page...");
+      const titleMatch = xml.match(/<title>([\s\S]*?)<\/title>/i) || xml.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+      let title = "Tin tức tự động";
+      if (titleMatch) {
+        title = titleMatch[1].replace(/<[^>]*>/g, "").trim();
+      }
+      let rawDescription = xml;
+      rssItems.push({ title, link: rssUrl, rawDescription });
+    }
+
+    // Find the first article that is NOT already in history (deduplication)
+    let selectedItem = null;
+    for (const item of rssItems) {
+      let isDuplicate = false;
+      if (mongoose.connection.readyState === 1) {
+        const exists = await History.findOne({
+          $or: [
+            { link: item.link },
+            { title: item.title }
+          ]
+        });
+        isDuplicate = !!exists;
+      } else {
+        const historyPath = path.join(__dirname, "history.json");
+        if (fs.existsSync(historyPath)) {
+          try {
+            const localHistory = JSON.parse(fs.readFileSync(historyPath, "utf8"));
+            isDuplicate = localHistory.some(h => h.link === item.link || h.title === item.title);
+          } catch (e) {
+            isDuplicate = false;
+          }
+        }
+      }
+
+      if (!isDuplicate) {
+        selectedItem = item;
+        break; // Stop at the first new article
+      }
+    }
+
+    if (!selectedItem) {
+      console.log("[Cron RSS] All items in RSS feed have already been published.");
+      return res.json({ success: true, message: "Không có tin tức mới nào để xử lý (Tất cả bài viết đều đã đăng trước đó)." });
+    }
+
+    console.log(`[Cron RSS] Selected new article: ${selectedItem.title} - ${selectedItem.link}`);
+    steps.step1.success = true;
+    steps.step1.data = { title: selectedItem.title, link: selectedItem.link };
+
+    // --- STEP 2: Clean HTML ---
+    let cleaned = selectedItem.rawDescription.replace(/<[^>]*>/g, " ");
+    cleaned = cleaned
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (cleaned.length > 5000) {
+      cleaned = cleaned.slice(0, 5000) + "...";
+    }
+
+    steps.step2.success = true;
+    steps.step2.data = { cleanedText: cleaned };
+
+    // --- LOOP THROUGH TARGET SITES ---
+    const results = [];
+    
+    for (const siteId of targetIds) {
+      const site = (config.websites || []).find(w => w.id === siteId);
+      if (!site) {
+        results.push({
+          siteId,
+          siteName: `Không rõ (ID: ${siteId})`,
+          siteUrl: "",
+          step3: { success: false, error: "Website không tồn tại" },
+          step4: { success: false, error: "Bỏ qua" }
+        });
+        continue;
+      }
+
+      const siteResult = {
+        siteId,
+        siteName: site.name,
+        siteUrl: site.url,
+        step3: { success: false, data: null, error: null },
+        step4: { success: false, data: null, error: null }
+      };
+
+      // --- STEP 3: AI Rewrite for this site ---
+      try {
+        const randomBacklink = Math.random() > 0.5 ? "https://maxdent.vn" : "http://ddd.vn";
+        const anchorText = randomBacklink.includes("maxdent") ? "Nha khoa MaxDent" : "Kiến thức nha khoa";
+
+        const aiPrompt = `Hãy đóng vai là một nhà viết bài blog chuẩn SEO chuyên nghiệp. Hãy viết lại bài viết dưới đây thành một bài viết hướng dẫn chuyên sâu, chi tiết và dài hạn bằng Tiếng Việt.
+YÊU CẦU ĐỘ DÀI: Bài viết mới BẮT BUỘC phải có độ dài từ 1500 đến 2000 từ. 
+Để đạt được độ dài tối thiểu 1500 từ, hãy phân tích kỹ lưỡng các khía cạnh liên quan, giải thích sâu các thuật ngữ nha khoa, mô tả chi tiết từng bước quy trình điều trị/chăm sóc, phân tích ưu nhược điểm, đưa ra lời khuyên từ bác sĩ chuyên gia, và thêm phần Các câu hỏi thường gặp (FAQ) có giải thích chi tiết ở cuối bài.
+BẮT BUỘC chèn đúng một liên kết (backlink) trỏ về địa chỉ sau vào vị trí phù hợp nhất trong văn cảnh bài viết:
+- URL: ${randomBacklink}
+- Anchor text: ${anchorText}
+
+Nội dung đầu ra CHỈ trả về mã HTML sạch chứa bài viết mới (bao gồm các thẻ p, h2, h3, ul, li, strong, a). Không thêm bất kỳ lời dẫn giải thích hay định dạng markdown nào khác ngoài HTML.
+
+Bài viết gốc:
+Tiêu đề: ${selectedItem.title}
+Nội dung tóm tắt: ${cleaned}`;
+
+        const qwen = new OpenAI({
+          apiKey: alibabaKey,
+          baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+        });
+        const completion = await qwen.chat.completions.create({
+          model: "qwen-plus",
+          messages: [
+            { role: "system", content: "You are a professional copywriter who returns pure HTML format and writes extensive, detailed articles." },
+            { role: "user", content: aiPrompt }
+          ],
+          max_tokens: 4000
+        });
+        let rewrittenHtml = completion.choices[0].message.content;
+        rewrittenHtml = rewrittenHtml.replace(/^```html\s*/i, "").replace(/```\s*$/, "").trim();
+
+        siteResult.step3.success = true;
+        siteResult.step3.data = { modelUsed: "Qwen Plus", rewrittenHtml, backlink: randomBacklink, anchorText };
+
+        // --- STEP 4: WordPress Upload ---
+        const cleanWpUrl = site.url.replace(/\/+$/, "");
+        const apiEndpoint = `${cleanWpUrl}/wp-json/wp/v2/posts`;
+        const authHeader = `Basic ${Buffer.from(`${site.user}:${site.password}`).toString("base64")}`;
+
+        const postResponse = await axios.post(apiEndpoint, {
+          title: `[Tái bản Tự động] ${selectedItem.title}`,
+          content: rewrittenHtml,
+          status: "draft"
+        }, {
+          headers: {
+            Authorization: authHeader,
+            "Content-Type": "application/json"
+          },
+          timeout: 30000
+        });
+
+        // Add to history database
+        await saveToHistory({
+          taskId: "cron_scenario_" + Date.now() + "_" + Math.random().toString(36).substr(2, 5),
+          title: `[Tái bản Tự động] ${selectedItem.title}`,
+          link: selectedItem.link, // Save original RSS link to check duplicate later
+          topic: selectedItem.title,
+          websiteName: site.name,
+          websiteUrl: site.url,
+          timestamp: new Date().toISOString()
+        });
+
+        siteResult.step4.success = true;
+        siteResult.siteUrl = postResponse.data.link;
+        siteResult.step4.data = {
+          postId: postResponse.data.id,
+          postLink: postResponse.data.link,
+          siteName: site.name,
+          siteUrl: site.url,
+          status: "draft"
+        };
+
+      } catch (err) {
+        console.error(`[Cron RSS] Failed for site ${site.name}:`, err.message);
+        if (!siteResult.step3.success) {
+          siteResult.step3.error = err.message;
+        } else {
+          siteResult.step4.error = err.message;
+        }
+      }
+
+      results.push(siteResult);
+    }
+
+    // Set overall status
+    steps.step3.success = results.some(r => r.step3.success);
+    steps.step4.success = results.some(r => r.step4.success);
+    steps.results = results;
+
+    res.json({ success: true, message: "Kích hoạt cron tự động hoàn tất.", steps });
+
+  } catch (err) {
+    console.error("[Cron RSS] Automated RSS failed:", err.message);
+    res.status(500).json({ success: false, error: err.message, steps });
   }
 });
 

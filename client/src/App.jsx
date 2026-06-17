@@ -2672,6 +2672,127 @@ function App() {
                   </div>
                 </div>
               </div>
+
+              {/* DAILY RSS AUTOMATION PANEL */}
+              <div className="panel">
+                <h3 className="panel-title">⏰ Tự Động Hóa RSS Hàng Ngày (Webhook Daily Cron)</h3>
+                <p className="panel-desc">Cấu hình luồng tự động chạy lấy tin tức RSS mới nhất, loại trùng bài cũ, viết lại độc bản bằng AI Qwen và đăng lên hệ thống website của bạn mỗi ngày.</p>
+                
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginBottom: "1rem" }}>
+                  <div className="form-group">
+                    <label>Đường dẫn RSS mặc định tự động chạy</label>
+                    <input
+                      type="text"
+                      name="defaultRssUrl"
+                      value={config.defaultRssUrl || ""}
+                      onChange={handleConfigChange}
+                      placeholder="Ví dụ: https://vnexpress.net/rss/kinh-doanh.rss"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Website vệ tinh nhận bài tự động (Chọn nhiều)</label>
+                    <div style={{ 
+                      display: "flex", 
+                      flexDirection: "column", 
+                      gap: "0.5rem", 
+                      maxHeight: "150px", 
+                      overflowY: "auto", 
+                      border: "1px solid var(--color-border)", 
+                      borderRadius: "6px", 
+                      padding: "0.5rem", 
+                      backgroundColor: "#ffffff",
+                      marginTop: "0.25rem"
+                    }}>
+                      {(!config.websites || config.websites.length === 0) ? (
+                        <div style={{ fontSize: "0.8rem", color: "#64748b", fontStyle: "italic" }}>Chưa liên kết website nào. Vui lòng thêm website ở trên trước.</div>
+                      ) : (
+                        config.websites.map(site => {
+                          const defaultRssWebsites = config.defaultRssWebsites || [];
+                          const isChecked = defaultRssWebsites.includes(site.id);
+                          return (
+                            <label key={site.id} style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.85rem", cursor: "pointer" }}>
+                              <input 
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {
+                                  const nextWebsites = isChecked 
+                                    ? defaultRssWebsites.filter(id => id !== site.id)
+                                    : [...defaultRssWebsites, site.id];
+                                  setConfig(prev => ({ ...prev, defaultRssWebsites: nextWebsites }));
+                                }}
+                              />
+                              <strong>{site.name}</strong> <span style={{ color: "#64748b" }}>({site.url})</span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Mã bảo mật Webhook (Cron Secret Key)</label>
+                  <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <input
+                      type="text"
+                      name="cronSecret"
+                      value={config.cronSecret || ""}
+                      onChange={handleConfigChange}
+                      placeholder="Nhập mã bảo mật tự chọn..."
+                      style={{ flex: 1 }}
+                    />
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        const randomSecret = "cron_secret_" + Math.random().toString(36).substr(2, 10);
+                        setConfig(prev => ({ ...prev, cronSecret: randomSecret }));
+                      }}
+                      style={{ margin: 0, padding: "0.5rem 1rem", fontSize: "0.85rem" }}
+                    >
+                      🎲 Tạo Ngẫu Nhiên
+                    </button>
+                  </div>
+                </div>
+
+                {config.cronSecret && (
+                  <div style={{
+                    padding: "1rem",
+                    borderRadius: "8px",
+                    border: "1px solid #bae6fd",
+                    backgroundColor: "#f0f9ff",
+                    marginTop: "1rem",
+                    fontSize: "0.85rem"
+                  }}>
+                    <strong style={{ color: "#0369a1", display: "block", marginBottom: "0.5rem" }}>💡 Hướng dẫn cài đặt tự động chạy 24/7 (Miễn phí):</strong>
+                    <ol style={{ margin: 0, paddingLeft: "1.2rem", display: "flex", flexDirection: "column", gap: "0.4rem" }}>
+                      <li>Truy cập trang web gọi lịch miễn phí: <a href="https://cron-job.org" target="_blank" rel="noreferrer" style={{ color: "#3b82f6", fontWeight: "bold", textDecoration: "underline" }}>cron-job.org</a> và tạo tài khoản miễn phí.</li>
+                      <li>Nhấp vào nút <strong>Create Cronjob</strong>.</li>
+                      <li>Đặt tên bất kỳ (ví dụ: <code>Auto RSS Publisher</code>) và dán URL Webhook của bạn vào ô <strong>URL</strong>:
+                        <div style={{ 
+                          backgroundColor: "#ffffff", 
+                          padding: "0.5rem", 
+                          borderRadius: "4px", 
+                          border: "1px solid #e2e8f0", 
+                          marginTop: "0.25rem",
+                          wordBreak: "break-all",
+                          fontFamily: "monospace",
+                          fontWeight: "bold",
+                          color: "#1e293b"
+                        }}>
+                          {`${BACKEND_URL}/api/cron/run-rss-scenario?secret=${config.cronSecret}`}
+                        </div>
+                      </li>
+                      <li>Chọn lịch chạy là <strong>Every Day</strong> (Hàng ngày) hoặc bất kỳ tần suất nào bạn muốn (ví dụ: 12 tiếng một lần).</li>
+                      <li>Bấm <strong>Create</strong>. Hệ thống sẽ tự động gọi URL trên để cào tin mới, tự viết lại độc bản bằng AI Qwen và đăng lên web vệ tinh cho bạn mỗi ngày.</li>
+                    </ol>
+                  </div>
+                )}
+
+                <button className="btn btn-secondary" onClick={handleSaveConfig} style={{ alignSelf: "flex-end", marginTop: "1rem" }}>
+                  💾 Lưu Cấu Hình Tự Động Hóa RSS
+                </button>
+              </div>
             </>
           )}
 
