@@ -1308,7 +1308,7 @@ function App() {
 
       {/* Main Content Area */}
       <div className="main-content">
-        <div className="main-container">
+        <div className="main-container tab-pane" key={activeTab}>
           
           {/* TAB 1: DASHBOARD OVERVIEW */}
           {activeTab === "dashboard" && (

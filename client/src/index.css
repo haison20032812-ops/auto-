@@ -141,22 +141,57 @@ body {
   font-size: 0.9rem;
   text-decoration: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   border: none;
   background: transparent;
   text-align: left;
   width: 100%;
+  position: relative;
 }
 
 .menu-item:hover {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: rgba(255, 255, 255, 0.06);
   color: #f8fafc;
+  transform: translateX(6px);
+}
+
+.menu-item:active {
+  transform: scale(0.96) translateX(4px);
 }
 
 .menu-item.active {
   background: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
   color: #ffffff;
   box-shadow: 0 4px 12px rgba(79, 70, 229, 0.25);
+}
+
+.menu-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 25%;
+  height: 50%;
+  width: 4px;
+  background-color: #ffffff;
+  border-radius: 0 4px 4px 0;
+}
+
+@keyframes tabFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.995);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.tab-pane {
+  animation: tabFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity, filter;
 }
 
 .sidebar-footer {
