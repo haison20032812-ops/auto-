@@ -52,7 +52,10 @@ let config = {
   smtpPassword: "",
   defaultRssUrl: "",
   defaultRssWebsites: [],
-  cronSecret: "cron_secret_" + Math.random().toString(36).substr(2, 8)
+  cronSecret: "cron_secret_" + Math.random().toString(36).substr(2, 8),
+  ollamaUrl: "http://localhost:11434",
+  ollamaModel: "qwen2.5:7b",
+  defaultRssModel: "qwen"
 };
 
 // MongoDB Schemas & Models
@@ -90,7 +93,10 @@ const configSchema = new mongoose.Schema({
   smtpPassword: { type: String, default: "" },
   defaultRssUrl: { type: String, default: "" },
   defaultRssWebsites: { type: Array, default: [] },
-  cronSecret: { type: String, default: "" }
+  cronSecret: { type: String, default: "" },
+  ollamaUrl: { type: String, default: "http://localhost:11434" },
+  ollamaModel: { type: String, default: "qwen2.5:7b" },
+  defaultRssModel: { type: String, default: "qwen" }
 }, { strict: false });
 const Config = mongoose.model("Config", configSchema);
 
@@ -979,8 +985,33 @@ Hãy trả về kết quả dưới dạng văn bản cấu trúc rõ ràng.`;
         outlinePrompt += `\n\n--- YÊU CẦU ĐẶC BIỆT CỦA NGƯỜI DÙNG ---\nBạn phải tuân thủ yêu cầu sau trong quá trình lập dàn bài:\n${customSystemPrompt}`;
       }
 
+      // Try Ollama for Outline
+      if (researchModel === "ollama") {
+        try {
+          const ollamaUrl = config.ollamaUrl || "http://localhost:11434";
+          const ollamaModel = config.ollamaModel || "qwen2.5:7b";
+          logStep(taskId, `${displayTopicNum} Đang lập dàn ý nghiên cứu bằng Ollama Local AI (${ollamaModel})...`, "info");
+          const ollama = new OpenAI({
+            apiKey: "ollama",
+            baseURL: ollamaUrl.endsWith("/v1") ? ollamaUrl : `${ollamaUrl.replace(/\/+$/, "")}/v1`
+          });
+          const completion = await ollama.chat.completions.create({
+            model: ollamaModel,
+            messages: [
+              { role: "system", content: "You are an SEO research expert." },
+              { role: "user", content: outlinePrompt }
+            ]
+          }, { timeout: 120000 });
+          outline = completion.choices[0].message.content;
+          researchCompleted = true;
+          logStep(taskId, `${displayTopicNum} Hoàn thành nghiên cứu bằng Ollama Local AI.`, "success");
+        } catch (err) {
+          logStep(taskId, `${displayTopicNum} Lỗi khi dùng Ollama nghiên cứu: ${err.message}. Thử chuyển sang model dự phòng...`, "warning");
+        }
+      }
+
       // Try Qwen for Outline
-      if (researchModel === "qwen" && alibabaKey && alibabaKey.trim() !== "") {
+      if (!researchCompleted && researchModel === "qwen" && alibabaKey && alibabaKey.trim() !== "") {
         try {
           logStep(taskId, `${displayTopicNum} Đang lập dàn ý nghiên cứu bằng Alibaba Qwen (qwen-plus)...`, "info");
           const qwen = new OpenAI({
@@ -1083,8 +1114,41 @@ Hãy chọn các từ khóa tìm kiếm ảnh phù hợp như 'dentist', 'dental
         systemMessage += `\n\nAdditional instructions that you MUST follow:\n${customSystemPrompt}`;
       }
 
+      // Try Ollama
+      if (writingModel === "ollama") {
+        try {
+          const ollamaUrl = config.ollamaUrl || "http://localhost:11434";
+          const ollamaModel = config.ollamaModel || "qwen2.5:7b";
+          logStep(taskId, `${displayTopicNum} Đang viết bài viết chi tiết bằng Ollama Local AI (${ollamaModel})...`, "info");
+          const ollama = new OpenAI({
+            apiKey: "ollama",
+            baseURL: ollamaUrl.endsWith("/v1") ? ollamaUrl : `${ollamaUrl.replace(/\/+$/, "")}/v1`
+          });
+          const contentCompletion = await ollama.chat.completions.create({
+            model: ollamaModel,
+            messages: [
+              { role: "system", content: systemMessage },
+              { role: "user", content: writePrompt }
+            ]
+          }, { timeout: 180000 });
+
+          const rawHtml = contentCompletion.choices[0].message.content;
+          const h1Match = rawHtml.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+          if (h1Match) {
+            title = h1Match[1].trim();
+            articleHtml = rawHtml.replace(/<h1[^>]*>[\s\S]*?<\/h1>/i, "");
+          } else {
+            articleHtml = rawHtml;
+          }
+          articleGenerated = true;
+          logStep(taskId, `${displayTopicNum} Viết bài hoàn tất bằng Ollama Local AI. Tiêu đề: "${title}"`, "success");
+        } catch (err) {
+          logStep(taskId, `${displayTopicNum} Lỗi khi dùng Ollama viết bài: ${err.message}. Thử chuyển sang dự phòng...`, "warning");
+        }
+      }
+
       // Try Qwen
-      if (writingModel === "qwen" && alibabaKey && alibabaKey.trim() !== "") {
+      if (!articleGenerated && writingModel === "qwen" && alibabaKey && alibabaKey.trim() !== "") {
         try {
           logStep(taskId, `${displayTopicNum} Đang viết bài viết chi tiết bằng Alibaba Qwen (qwen-plus)...`, "info");
           const qwen = new OpenAI({
@@ -1329,6 +1393,23 @@ CHÚ Ý QUAN TRỌNG: Bạn chỉ được trả về DUY NHẤT tiêu đề bà
             let variantTitle = "";
             let systemMessageTitle = "Bạn là một chuyên gia viết tiêu đề chuẩn SEO trong lĩnh vực nha khoa (răng hàm mặt, cấy ghép implant). Mọi tiêu đề phải phản ánh đúng chủ môn nha khoa y tế. Tuyệt đối KHÔNG viết về chủ đề di trú, định cư, visa hay kiểm tra nhân thân, ngay cả khi tên website có chứa từ 'Di trú'.";
 
+            const tryOllamaTitle = async () => {
+              const ollamaUrl = config.ollamaUrl || "http://localhost:11434";
+              const ollamaModel = config.ollamaModel || "qwen2.5:7b";
+              const ollama = new OpenAI({
+                apiKey: "ollama",
+                baseURL: ollamaUrl.endsWith("/v1") ? ollamaUrl : `${ollamaUrl.replace(/\/+$/, "")}/v1`
+              });
+              const comp = await ollama.chat.completions.create({
+                model: ollamaModel,
+                messages: [
+                  { role: "system", content: systemMessageTitle },
+                  { role: "user", content: titlePrompt }
+                ]
+              }, { timeout: 60000 });
+              return comp.choices[0].message.content.trim();
+            };
+
             const tryQwenTitle = async () => {
               if (!alibabaKey) throw new Error("Chưa cấu hình API Key Alibaba.");
               const qwen = new OpenAI({ apiKey: alibabaKey, baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1" });
@@ -1356,7 +1437,19 @@ CHÚ Ý QUAN TRỌNG: Bạn chỉ được trả về DUY NHẤT tiêu đề bà
             };
 
             try {
-              if (researchModel === "qwen") {
+              if (researchModel === "ollama") {
+                try {
+                  variantTitle = await tryOllamaTitle();
+                } catch (ollamaErr) {
+                  logStep(taskId, `${siteLabel} Lỗi tạo tiêu đề bằng Ollama: ${ollamaErr.message}. Thử chuyển sang Qwen...`, "warning");
+                  try {
+                    variantTitle = await tryQwenTitle();
+                  } catch (qwenErr) {
+                    logStep(taskId, `${siteLabel} Lỗi tạo tiêu đề bằng Qwen: ${qwenErr.message}. Thử chuyển sang OpenAI...`, "warning");
+                    variantTitle = await tryOpenAiTitle();
+                  }
+                }
+              } else if (researchModel === "qwen") {
                 try {
                   variantTitle = await tryQwenTitle();
                 } catch (qwenErr) {
@@ -1400,6 +1493,20 @@ Nhiệm vụ của bạn:
               outlinePrompt += `\n\n--- YÊU CẦU ĐẶC BIỆT CỦA NGƯỜI DÙNG ---\nBạn phải tuân thủ yêu cầu sau trong quá trình lập dàn bài:\n${customSystemPrompt}`;
             }
 
+            const tryOllamaOutline = async () => {
+              const ollamaUrl = config.ollamaUrl || "http://localhost:11434";
+              const ollamaModel = config.ollamaModel || "qwen2.5:7b";
+              const ollama = new OpenAI({
+                apiKey: "ollama",
+                baseURL: ollamaUrl.endsWith("/v1") ? ollamaUrl : `${ollamaUrl.replace(/\/+$/, "")}/v1`
+              });
+              const comp = await ollama.chat.completions.create({
+                model: ollamaModel,
+                messages: [{ role: "user", content: outlinePrompt }]
+              }, { timeout: 90000 });
+              return comp.choices[0].message.content;
+            };
+
             const tryQwenOutline = async () => {
               if (!alibabaKey) throw new Error("Chưa cấu hình API Key Alibaba.");
               const qwen = new OpenAI({ apiKey: alibabaKey, baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1" });
@@ -1421,7 +1528,19 @@ Nhiệm vụ của bạn:
             };
 
             try {
-              if (researchModel === "qwen") {
+              if (researchModel === "ollama") {
+                try {
+                  siteOutline = await tryOllamaOutline();
+                } catch (ollamaErr) {
+                  logStep(taskId, `${siteLabel} Thử dàn bài bằng Ollama thất bại: ${ollamaErr.message}. Thử chuyển sang Qwen...`, "warning");
+                  try {
+                    siteOutline = await tryQwenOutline();
+                  } catch (qwenErr) {
+                    logStep(taskId, `${siteLabel} Thử dàn bài bằng Qwen thất bại: ${qwenErr.message}. Thử chuyển sang OpenAI...`, "warning");
+                    siteOutline = await tryOpenAiOutline();
+                  }
+                }
+              } else if (researchModel === "qwen") {
                 try {
                   siteOutline = await tryQwenOutline();
                 } catch (qwenErr1) {
@@ -1476,6 +1595,23 @@ Sử dụng các URL ảnh nha khoa chất lượng cao từ Unsplash làm thu�
               systemMessage += `\n\nAdditional instructions that you MUST follow:\n${customSystemPrompt}`;
             }
 
+            const tryOllamaContent = async () => {
+              const ollamaUrl = config.ollamaUrl || "http://localhost:11434";
+              const ollamaModel = config.ollamaModel || "qwen2.5:7b";
+              const ollama = new OpenAI({
+                apiKey: "ollama",
+                baseURL: ollamaUrl.endsWith("/v1") ? ollamaUrl : `${ollamaUrl.replace(/\/+$/, "")}/v1`
+              });
+              const comp = await ollama.chat.completions.create({
+                model: ollamaModel,
+                messages: [
+                  { role: "system", content: systemMessage },
+                  { role: "user", content: writePrompt }
+                ]
+              }, { timeout: 180000 });
+              return comp.choices[0].message.content;
+            };
+
             const tryQwenContent = async () => {
               if (!alibabaKey) throw new Error("Chưa cấu hình API Key Alibaba.");
               const qwen = new OpenAI({ apiKey: alibabaKey, baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1" });
@@ -1504,7 +1640,19 @@ Sử dụng các URL ảnh nha khoa chất lượng cao từ Unsplash làm thu�
 
             let rawHtml = "";
             try {
-              if (writingModel === "qwen") {
+              if (writingModel === "ollama") {
+                try {
+                  rawHtml = await tryOllamaContent();
+                } catch (ollamaErr) {
+                  logStep(taskId, `${siteLabel} Thử viết nội dung bằng Ollama thất bại: ${ollamaErr.message}. Thử chuyển sang Qwen...`, "warning");
+                  try {
+                    rawHtml = await tryQwenContent();
+                  } catch (qwenErr) {
+                    logStep(taskId, `${siteLabel} Thử viết nội dung bằng Qwen thất bại: ${qwenErr.message}. Thử chuyển sang OpenAI...`, "warning");
+                    rawHtml = await tryOpenAiContent();
+                  }
+                }
+              } else if (writingModel === "qwen") {
                 try {
                   rawHtml = await tryQwenContent();
                 } catch (qwenErr1) {
@@ -2354,7 +2502,8 @@ app.post("/api/publish-single", async (req, res) => {
 
 // Route: Run the 4-step RSS automation scenario
 app.post("/api/run-rss-scenario", async (req, res) => {
-  const { rssUrl, websiteId, websiteIds } = req.body;
+  const { rssUrl, websiteId, websiteIds, model } = req.body;
+  const selectedModel = model || config.defaultRssModel || "qwen";
   
   const steps = {
     step1: { name: "Lấy tin tức/RSS", success: false, data: null, error: null },
@@ -2532,24 +2681,58 @@ Nội dung tóm tắt: ${cleaned}`;
         let rewrittenHtml = "";
         let modelUsed = "";
 
-        if (!alibabaKey || alibabaKey.trim() === "") {
-          throw new Error("Khóa API Alibaba Cloud trống hoặc chưa được cấu hình.");
+        if (selectedModel === "ollama") {
+          const ollamaUrl = config.ollamaUrl || "http://localhost:11434";
+          const ollamaModel = config.ollamaModel || "qwen2.5:7b";
+          const ollama = new OpenAI({
+            apiKey: "ollama",
+            baseURL: ollamaUrl.endsWith("/v1") ? ollamaUrl : `${ollamaUrl.replace(/\/+$/, "")}/v1`
+          });
+          const completion = await ollama.chat.completions.create({
+            model: ollamaModel,
+            messages: [
+              { role: "system", content: "You are a professional copywriter who returns pure HTML format and writes extensive, detailed articles." },
+              { role: "user", content: aiPrompt }
+            ],
+            max_tokens: 4000
+          });
+          rewrittenHtml = completion.choices[0].message.content;
+          modelUsed = `Ollama (${ollamaModel})`;
+        } else if (selectedModel === "openai") {
+          if (!openaiKey || openaiKey.trim() === "") {
+            throw new Error("Khóa API OpenAI trống hoặc chưa được cấu hình.");
+          }
+          const openai = new OpenAI({ apiKey: openaiKey });
+          const completion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+              { role: "system", content: "You are a professional copywriter who returns pure HTML format and writes extensive, detailed articles." },
+              { role: "user", content: aiPrompt }
+            ],
+            max_tokens: 4000
+          });
+          rewrittenHtml = completion.choices[0].message.content;
+          modelUsed = "OpenAI GPT-4o";
+        } else {
+          if (!alibabaKey || alibabaKey.trim() === "") {
+            throw new Error("Khóa API Alibaba Cloud trống hoặc chưa được cấu hình.");
+          }
+          const qwen = new OpenAI({
+            apiKey: alibabaKey,
+            baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+          });
+          const completion = await qwen.chat.completions.create({
+            model: "qwen-plus",
+            messages: [
+              { role: "system", content: "You are a professional copywriter who returns pure HTML format and writes extensive, detailed articles." },
+              { role: "user", content: aiPrompt }
+            ],
+            max_tokens: 4000
+          });
+          rewrittenHtml = completion.choices[0].message.content;
+          modelUsed = "Qwen Plus";
         }
 
-        const qwen = new OpenAI({
-          apiKey: alibabaKey,
-          baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-        });
-        const completion = await qwen.chat.completions.create({
-          model: "qwen-plus",
-          messages: [
-            { role: "system", content: "You are a professional copywriter who returns pure HTML format and writes extensive, detailed articles." },
-            { role: "user", content: aiPrompt }
-          ],
-          max_tokens: 4000
-        });
-        rewrittenHtml = completion.choices[0].message.content;
-        modelUsed = "Qwen Plus";
         rewrittenHtml = rewrittenHtml.replace(/^```html\s*/i, "").replace(/```\s*$/, "").trim();
 
         siteResult.step3.success = true;
@@ -2650,9 +2833,15 @@ app.get("/api/cron/run-rss-scenario", async (req, res) => {
     return res.status(400).json({ success: false, error: "Chưa cấu hình danh sách website nhận bài tự động." });
   }
 
+  const selectedModel = config.defaultRssModel || "qwen";
   const alibabaKey = config.alibabaKey;
-  if (!alibabaKey || alibabaKey.trim() === "") {
-    return res.status(400).json({ success: false, error: "Chưa cấu hình API Key Alibaba Cloud trong hệ thống." });
+  const openaiKey = config.openaiKey;
+
+  if (selectedModel === "qwen" && (!alibabaKey || alibabaKey.trim() === "")) {
+    return res.status(400).json({ success: false, error: "Chưa cấu hình API Key Alibaba Cloud trong hệ thống để chạy mô hình Qwen." });
+  }
+  if (selectedModel === "openai" && (!openaiKey || openaiKey.trim() === "")) {
+    return res.status(400).json({ success: false, error: "Chưa cấu hình API Key OpenAI trong hệ thống để chạy mô hình OpenAI." });
   }
 
   const steps = {
@@ -2807,23 +2996,59 @@ Bài viết gốc:
 Tiêu đề: ${selectedItem.title}
 Nội dung tóm tắt: ${cleaned}`;
 
-        const qwen = new OpenAI({
-          apiKey: alibabaKey,
-          baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
-        });
-        const completion = await qwen.chat.completions.create({
-          model: "qwen-plus",
-          messages: [
-            { role: "system", content: "You are a professional copywriter who returns pure HTML format and writes extensive, detailed articles." },
-            { role: "user", content: aiPrompt }
-          ],
-          max_tokens: 4000
-        });
-        let rewrittenHtml = completion.choices[0].message.content;
+        let rewrittenHtml = "";
+        let modelUsed = "";
+
+        if (selectedModel === "ollama") {
+          const ollamaUrl = config.ollamaUrl || "http://localhost:11434";
+          const ollamaModel = config.ollamaModel || "qwen2.5:7b";
+          const ollama = new OpenAI({
+            apiKey: "ollama",
+            baseURL: ollamaUrl.endsWith("/v1") ? ollamaUrl : `${ollamaUrl.replace(/\/+$/, "")}/v1`
+          });
+          const completion = await ollama.chat.completions.create({
+            model: ollamaModel,
+            messages: [
+              { role: "system", content: "You are a professional copywriter who returns pure HTML format and writes extensive, detailed articles." },
+              { role: "user", content: aiPrompt }
+            ],
+            max_tokens: 4000
+          });
+          rewrittenHtml = completion.choices[0].message.content;
+          modelUsed = `Ollama (${ollamaModel})`;
+        } else if (selectedModel === "openai") {
+          const openai = new OpenAI({ apiKey: openaiKey });
+          const completion = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+              { role: "system", content: "You are a professional copywriter who returns pure HTML format and writes extensive, detailed articles." },
+              { role: "user", content: aiPrompt }
+            ],
+            max_tokens: 4000
+          });
+          rewrittenHtml = completion.choices[0].message.content;
+          modelUsed = "OpenAI GPT-4o";
+        } else {
+          const qwen = new OpenAI({
+            apiKey: alibabaKey,
+            baseURL: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+          });
+          const completion = await qwen.chat.completions.create({
+            model: "qwen-plus",
+            messages: [
+              { role: "system", content: "You are a professional copywriter who returns pure HTML format and writes extensive, detailed articles." },
+              { role: "user", content: aiPrompt }
+            ],
+            max_tokens: 4000
+          });
+          rewrittenHtml = completion.choices[0].message.content;
+          modelUsed = "Qwen Plus";
+        }
+
         rewrittenHtml = rewrittenHtml.replace(/^```html\s*/i, "").replace(/```\s*$/, "").trim();
 
         siteResult.step3.success = true;
-        siteResult.step3.data = { modelUsed: "Qwen Plus", rewrittenHtml, backlink: randomBacklink, anchorText };
+        siteResult.step3.data = { modelUsed, rewrittenHtml, backlink: randomBacklink, anchorText };
 
         // --- STEP 4: WordPress Upload ---
         const cleanWpUrl = site.url.replace(/\/+$/, "");

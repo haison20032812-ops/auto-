@@ -43,6 +43,9 @@ function App() {
     leonardoKey: "",
     websites: [],
     customSystemPrompt: "",
+    ollamaUrl: "http://localhost:11434",
+    ollamaModel: "qwen2.5:7b",
+    defaultRssModel: "qwen"
   });
 
   const [selectedWebIds, setSelectedWebIds] = useState([]);
@@ -125,6 +128,7 @@ function App() {
   const [rssError, setRssError] = useState(null);
   const [rssUrlInput, setRssUrlInput] = useState("");
   const [rssSelectedWebIds, setRssSelectedWebIds] = useState([]);
+  const [rssModel, setRssModel] = useState("qwen");
 
   const [user, setUser] = useState(() => {
     try {
@@ -350,6 +354,7 @@ function App() {
       const res = await axios.post(`${BACKEND_URL}/api/run-rss-scenario`, {
         rssUrl: rssUrlInput,
         websiteIds: rssSelectedWebIds,
+        model: rssModel,
         geminiKey: config.geminiKey,
         alibabaKey: config.alibabaKey,
         openaiKey: config.openaiKey
@@ -910,8 +915,8 @@ function App() {
       alert("Vui lòng chọn ít nhất một website để đăng bài!");
       return;
     }
-    if (!config.geminiKey?.trim() && !config.openaiKey.trim() && !config.alibabaKey.trim()) {
-      alert("Vui lòng cấu hình API Key cho Gemini, OpenAI hoặc Alibaba Cloud!");
+    if (params.researchModel !== "ollama" && params.writingModel !== "ollama" && !config.geminiKey?.trim() && !config.openaiKey.trim() && !config.alibabaKey.trim()) {
+      alert("Vui lòng cấu hình API Key cho Gemini, OpenAI hoặc Alibaba Cloud, hoặc chọn mô hình Ollama (Local AI)!");
       return;
     }
 
@@ -1532,6 +1537,7 @@ function App() {
                     <select name="researchModel" value={params.researchModel} onChange={handleParamChange}>
                       <option value="qwen">Qwen (qwen-plus - Viết cực tốt bằng tiếng Việt)</option>
                       <option value="openai">OpenAI (gpt-4o-mini)</option>
+                      <option value="ollama">Ollama (Local AI - Chạy trên máy của bạn)</option>
                     </select>
                   </div>
                   <div className="form-group">
@@ -1539,6 +1545,7 @@ function App() {
                     <select name="writingModel" value={params.writingModel} onChange={handleParamChange}>
                       <option value="qwen">Qwen (qwen-plus - Đảm bảo tự nhiên & tốc độ)</option>
                       <option value="openai">OpenAI (gpt-4o)</option>
+                      <option value="ollama">Ollama (Local AI - Chạy trên máy của bạn)</option>
                     </select>
                   </div>
                 </div>
@@ -2226,6 +2233,34 @@ function App() {
                 </div>
 
                 <div className="form-group">
+                  <label>Ollama Local API URL</label>
+                  <input
+                    type="text"
+                    name="ollamaUrl"
+                    value={config.ollamaUrl || ""}
+                    onChange={handleConfigChange}
+                    placeholder="http://localhost:11434"
+                  />
+                  <span style={{ fontSize: "0.75rem", color: "#64748b", fontStyle: "italic", marginTop: "-0.25rem" }}>
+                    Địa chỉ chạy Ollama local. Mặc định là http://localhost:11434
+                  </span>
+                </div>
+
+                <div className="form-group">
+                  <label>Ollama Model Name</label>
+                  <input
+                    type="text"
+                    name="ollamaModel"
+                    value={config.ollamaModel || ""}
+                    onChange={handleConfigChange}
+                    placeholder="qwen2.5:7b"
+                  />
+                  <span style={{ fontSize: "0.75rem", color: "#64748b", fontStyle: "italic", marginTop: "-0.25rem" }}>
+                    Tên mô hình bạn đã tải về máy qua lệnh: ollama run [tên_model] (ví dụ: qwen2.5:7b, llama3.1:8b)
+                  </span>
+                </div>
+
+                <div className="form-group">
                   <label>Chỉ thị viết bài tùy chỉnh (AI Directive Prompt)</label>
                   <textarea
                     name="customSystemPrompt"
@@ -2678,7 +2713,7 @@ function App() {
                 <h3 className="panel-title">⏰ Tự Động Hóa RSS Hàng Ngày (Webhook Daily Cron)</h3>
                 <p className="panel-desc">Cấu hình luồng tự động chạy lấy tin tức RSS mới nhất, loại trùng bài cũ, viết lại độc bản bằng AI Qwen và đăng lên hệ thống website của bạn mỗi ngày.</p>
                 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginBottom: "1rem" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1.5rem", marginBottom: "1rem" }}>
                   <div className="form-group">
                     <label>Đường dẫn RSS mặc định tự động chạy</label>
                     <input
@@ -2688,6 +2723,18 @@ function App() {
                       onChange={handleConfigChange}
                       placeholder="Ví dụ: https://vnexpress.net/rss/kinh-doanh.rss"
                     />
+                  </div>
+                  <div className="form-group">
+                    <label>Mô hình AI viết bài mặc định</label>
+                    <select
+                      name="defaultRssModel"
+                      value={config.defaultRssModel || "qwen"}
+                      onChange={handleConfigChange}
+                    >
+                      <option value="qwen">Qwen (qwen-plus - Đảm bảo tự nhiên & tốc độ)</option>
+                      <option value="openai">OpenAI (gpt-4o)</option>
+                      <option value="ollama">Ollama (Local AI - Chạy trên máy của bạn)</option>
+                    </select>
                   </div>
                   <div className="form-group">
                     <label>Website vệ tinh nhận bài tự động (Chọn nhiều)</label>
@@ -2839,7 +2886,7 @@ function App() {
 
               <div className="panel">
                 <h3 className="panel-title">⚙️ Cấu Hình Luồng Chạy</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginBottom: "1rem" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1.5rem", marginBottom: "1rem" }}>
                   <div className="form-group">
                     <label>Đường dẫn bài viết hoặc nguồn RSS (Article Link or RSS Feed)</label>
                     <input
@@ -2848,6 +2895,14 @@ function App() {
                       onChange={(e) => setRssUrlInput(e.target.value)}
                       placeholder="Dán link bài viết hoặc nguồn RSS của bạn..."
                     />
+                  </div>
+                  <div className="form-group">
+                    <label>Mô hình viết bài (Model)</label>
+                    <select value={rssModel} onChange={(e) => setRssModel(e.target.value)}>
+                      <option value="qwen">Qwen (qwen-plus - Đảm bảo tự nhiên & tốc độ)</option>
+                      <option value="openai">OpenAI (gpt-4o)</option>
+                      <option value="ollama">Ollama (Local AI - Chạy trên máy của bạn)</option>
+                    </select>
                   </div>
                   <div className="form-group">
                     <label>Website vệ tinh nhận bài (Chọn nhiều)</label>
